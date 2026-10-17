@@ -32,6 +32,7 @@ try{
  const status=await page.locator('#status').innerText();
  assert.equal(await page.locator('#results').isVisible(),true,status);
  const samples=await page.locator('#segment-rows tr').count();
+ await page.waitForTimeout(900);
  assert.ok(samples>=3&&samples<=50);
  assert.ok(await page.locator('.leaflet-overlay-pane svg').evaluate(e=>e.getBoundingClientRect().width)>300,'Route SVG is clipped by CSS');
  console.log(JSON.stringify({check:useFixtures?'desktop using captured live responses':'live desktop route and weather',status,samples,metrics:await page.locator('#metrics').innerText()}));
@@ -52,6 +53,7 @@ try{
  await phone.screenshot({path:'artifacts/mobile-initial.png',fullPage:true});
  assert.ok(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile page overflows horizontally');
  await phone.locator('#check-button').click();await phone.locator('#results').waitFor({state:'visible'});
+ await phone.waitForTimeout(900);
  await phone.screenshot({path:'artifacts/mobile-results.png',fullPage:true});
  await phone.locator('#save-route').click();await phone.locator('#load-route').waitFor({state:'visible'});
  await phone.locator('#roads').fill('999999');await phone.locator('#check-button').click();
