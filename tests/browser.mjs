@@ -1,83 +1,75 @@
 import {createRequire} from 'node:module';
-import {mkdir,writeFile,readFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
-const runtimeRequire=createRequire('C:/Users/masti/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/.runtime.cjs');
-const {chromium}=runtimeRequire('playwright');
+const require=createRequire('C:/Users/masti/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/.runtime.cjs');
+const {chromium}=require('playwright');
+const useFixtures=process.argv.includes('--fixtures');
+const seedRoutes=JSON.parse(await readFile('artifacts/live-route.json','utf8'));
+const seedWeather=JSON.parse(await readFile('artifacts/live-weather.json','utf8'));
 await mkdir('artifacts',{recursive:true});
 const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
-const failures=[];
-const useFixtures=process.argv.includes('--fixtures');
-try{
- const context=await browser.newContext({viewport:{width:1440,height:1060},timezoneId:'Asia/Jerusalem'});
- if(useFixtures){
-  const route=await readFile('artifacts/live-route.json','utf8');
-  const weather=await readFile('artifacts/live-weather.json','utf8');
-  await context.route('https://routing.openstreetmap.de/**',r=>r.fulfill({status:200,contentType:'application/json',body:route}));
-  await context.route('https://api.open-meteo.com/v1/forecast**',r=>r.fulfill({status:200,contentType:'application/json',body:weather}));
- }
- const page=await context.newPage();
- page.on('pageerror',e=>failures.push(e.message));
- let routeData,weatherData;
- page.on('response',async r=>{
-  if(r.url().includes('routed-car/route/')){try{routeData=await r.json();}catch{}}
-  if(r.url().startsWith('https://api.open-meteo.com/v1/forecast')){try{weatherData=await r.json();}catch{}}
+const errors=[];
+function weatherFixture(url,seed,broken=false){
+ const u=new URL(url),lats=u.searchParams.get('latitude').split(',').map(Number),lons=u.searchParams.get('longitude').split(',').map(Number);
+ return lats.map((lat,i)=>{
+  const nearest=seed.reduce((best,w)=>(w.latitude-lat)**2+(w.longitude-lons[i])**2<(best.latitude-lat)**2+(best.longitude-lons[i])**2?w:best,seed[0]);
+  const result=structuredClone(nearest);if(broken&&i===0)result.hourly.wind_gusts_10m=result.hourly.wind_gusts_10m.map(()=>null);return result;
  });
+}
+async function installFixtures(context,routes,weather,broken=()=>false){
+ await context.route('https://routing.openstreetmap.de/**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(routes)}));
+ await context.route('https://api.open-meteo.com/v1/forecast**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(weatherFixture(r.request().url(),weather,broken()))}));
+}
+async function fillJourney(page){
+ await page.locator('#flow-fields input').fill('תל אביב');await page.locator('#flow-fields .suggestions button').filter({hasText:/^תל אביב$/}).click();
+ assert.equal(await page.locator('body').getAttribute('data-flow'),'destination');
+ assert.equal(await page.locator('#flow-title').innerText(),'לאן נוסעים?');
+ await page.locator('#flow-fields input').fill('ירושלים');await page.locator('#flow-fields .suggestions button').filter({hasText:/^ירושלים$/}).click();
+ await page.waitForFunction(()=>!document.querySelector('#results').hidden||document.querySelector('#flow-status').classList.contains('error'),{},{timeout:90000});
+ assert.equal(await page.locator('#results').getAttribute('hidden'),null,await page.locator('#flow-status').innerText());
+}
+try{
+ const context=await browser.newContext({viewport:{width:1440,height:1000},timezoneId:'Asia/Jerusalem',serviceWorkers:'block'});
+ if(useFixtures)await installFixtures(context,seedRoutes,seedWeather);
+ const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+ let routeData=seedRoutes,weatherData=seedWeather,weatherRequests=0;
+ page.on('response',async r=>{if(r.url().includes('routed-car/route/'))try{routeData=await r.json();}catch{};if(r.url().startsWith('https://api.open-meteo.com/v1/forecast')){weatherRequests++;if(!useFixtures)try{weatherData=await r.json();}catch{}}});
  await page.goto('http://127.0.0.1:4173',{waitUntil:'domcontentloaded'});
- await page.waitForFunction(()=>typeof window.L==='object');
- await page.waitForFunction(()=>document.querySelectorAll('.leaflet-tile-loaded').length>0);
- await page.screenshot({path:'artifacts/desktop-initial.png',fullPage:true});
- assert.equal(await page.locator('html').getAttribute('dir'),'rtl');
- await page.locator('#check-button').click();
- await page.waitForFunction(()=>!document.querySelector('#results').hidden||document.querySelector('#status').classList.contains('error'),{},{timeout:90000});
- const status=await page.locator('#status').innerText();
- assert.equal(await page.locator('#results').isVisible(),true,status);
- const samples=await page.locator('#segment-rows tr').count();
- await page.waitForTimeout(900);
- assert.ok(samples>=3&&samples<=50);
- assert.ok(await page.locator('.leaflet-overlay-pane svg').evaluate(e=>e.getBoundingClientRect().width)>300,'Route SVG is clipped by CSS');
- console.log(JSON.stringify({check:useFixtures?'desktop using captured live responses':'live desktop route and weather',status,samples,metrics:await page.locator('#metrics').innerText()}));
- await page.screenshot({path:'artifacts/desktop-results.png',fullPage:true});
- assert.ok(routeData?.routes?.length);assert.ok(Array.isArray(weatherData));
- await writeFile('artifacts/live-route.json',JSON.stringify(routeData));await writeFile('artifacts/live-weather.json',JSON.stringify(weatherData));
- await page.locator('[data-sample="1"]').click();assert.equal(await page.locator('.leaflet-popup').count(),1);
- await page.locator('#roads').fill('90');
- assert.equal(await page.locator('#results').isVisible(),false);
- console.log('Changing route parameters clears old forecast.');
+ assert.equal(await page.locator('#flow-fields input').count(),1);assert.equal(await page.locator('.shell').isVisible(),false);assert.equal(await page.locator('#flow-title').innerText(),'מאיפה יוצאים?');
+ await page.screenshot({path:'artifacts/desktop-origin.png',fullPage:true});
+ await fillJourney(page);
+ assert.ok(await page.locator('[data-route-option]').count()>=1);
+ await page.screenshot({path:'artifacts/desktop-routes.png',fullPage:true});
+ await page.locator('[data-route-option="0"]').click();
+ assert.equal(await page.locator('body').getAttribute('data-flow'),'ride');
+ await page.waitForTimeout(1000);
+ assert.equal(await page.locator('.planner').isVisible(),false);
+ assert.ok(await page.locator('.leaflet-overlay-pane svg').evaluate(e=>e.getBoundingClientRect().width)>300);
+ await page.screenshot({path:'artifacts/desktop-ride.png',fullPage:true});
+ const samples=await page.locator('#segment-rows tr').count();assert.ok(samples>=3&&samples<=50);
+ await page.locator('#route-scrubber').focus();await page.locator('#route-scrubber').press('Home');assert.equal(await page.locator('#previous-point').isDisabled(),true);
+ await page.locator('#next-point').click();assert.equal(await page.locator('#route-scrubber').inputValue(),'1');
+ await page.locator('#play-ride').click();await page.waitForTimeout(2000);assert.equal(await page.locator('#play-ride').getAttribute('aria-pressed'),'true');
+ await page.locator('#play-ride').click();const paused=await page.locator('#route-scrubber').inputValue();await page.waitForTimeout(1900);assert.equal(await page.locator('#route-scrubber').inputValue(),paused);
+ const g=new URL(await page.locator('#google-navigation').getAttribute('href')),w=new URL(await page.locator('#waze-navigation').getAttribute('href'));assert.equal(g.searchParams.get('api'),'1');assert.equal(w.searchParams.get('vehicle_type'),'motorcycle');
+ if(await page.locator('[data-route-option]').count()>1){
+  const previousRequests=weatherRequests;await page.locator('#change-route').click();await page.locator('[data-route-option="1"]').click();assert.equal(await page.locator('[data-route-option="1"]').getAttribute('aria-pressed'),'true');assert.equal(weatherRequests,previousRequests);
+ }
+ await page.locator('#data-details summary').click();await page.locator('[data-sample="1"]').click();assert.equal(await page.locator('.leaflet-popup').count(),1);
+ if(!useFixtures){await writeFile('artifacts/live-route.json',JSON.stringify(routeData));await writeFile('artifacts/live-weather.json',JSON.stringify(weatherData));}
+ console.log(JSON.stringify({check:useFixtures?'wizard and route choices with test replay':'live routes and forecasts',routes:routeData.routes.length,samples,weatherRequests}));
  await context.close();
-
  const mobile=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1,isMobile:true,hasTouch:true,timezoneId:'Asia/Jerusalem',serviceWorkers:'block'});
- await mobile.route('https://routing.openstreetmap.de/**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(routeData)}));
- await mobile.route('https://api.open-meteo.com/v1/forecast**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(weatherData)}));
- const phone=await mobile.newPage();phone.on('pageerror',e=>failures.push(e.message));
- await phone.goto('http://127.0.0.1:4173',{waitUntil:'domcontentloaded'});
- await phone.screenshot({path:'artifacts/mobile-initial.png',fullPage:true});
- assert.ok(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Mobile page overflows horizontally');
- await phone.locator('#check-button').click();await phone.locator('#results').waitFor({state:'visible'});
- await phone.waitForTimeout(900);
- await phone.screenshot({path:'artifacts/mobile-results.png',fullPage:true});
- await phone.locator('#save-route').click();await phone.locator('#load-route').waitFor({state:'visible'});
- await phone.locator('#roads').fill('999999');await phone.locator('#check-button').click();
- await phone.waitForFunction(()=>document.querySelector('#status').classList.contains('error'));
- assert.match(await phone.locator('#status').innerText(),/אינן כוללות/);
- assert.equal(await phone.locator('#results').isVisible(),false);
- console.log('Missing requested road blocks forecast, saved route works, mobile layout fits.');
- await phone.locator('#roads').fill('');
- await mobile.unroute('https://api.open-meteo.com/v1/forecast**');
- const invalid=structuredClone(weatherData);invalid[0].hourly.wind_gusts_10m=invalid[0].hourly.wind_gusts_10m.map(()=>null);
- await mobile.route('https://api.open-meteo.com/v1/forecast**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(invalid)}));
- await phone.locator('#check-button').click();
- await phone.waitForFunction(()=>document.querySelector('#status').classList.contains('error'));
- assert.match(await phone.locator('#status').innerText(),/חסרים נתוני רוח/);
- assert.equal(await phone.locator('#results').isVisible(),false);
- console.log('Partial weather never appears as zero or a complete forecast.');
- await phone.locator('#add-stop').click();
- await phone.locator('[data-place^="stop-"] [data-pick]').click();
- await phone.locator('#map').click({position:{x:180,y:150}});
- assert.match(await phone.locator('[data-place^="stop-"] input').inputValue(),/מעבר במפה/);
- console.log('Map waypoint selection works on mobile.');
- await phone.locator('#install-button').click();assert.equal(await phone.locator('#install-dialog').isVisible(),true);
- await phone.locator('#install-dialog [data-close]').click();
- await mobile.setOffline(true);await phone.waitForTimeout(250);assert.equal(await phone.locator('#offline-banner').isVisible(),true);
- assert.deepEqual(failures,[]);console.log('Install guidance and offline state verified; no page errors.');
- await mobile.close();
+ let broken=false;await installFixtures(mobile,routeData,weatherData,()=>broken);
+ const phone=await mobile.newPage();phone.on('pageerror',e=>errors.push(e.message));await phone.goto('http://127.0.0.1:4173',{waitUntil:'domcontentloaded'});
+ await phone.screenshot({path:'artifacts/mobile-origin.png',fullPage:true});assert.ok(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await fillJourney(phone);await phone.screenshot({path:'artifacts/mobile-routes.png',fullPage:true});await phone.locator('[data-route-option="0"]').click();await phone.waitForTimeout(800);
+ await phone.locator('.rider-panel').screenshot({path:'artifacts/mobile-inspector.png'});assert.ok(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.equal(await phone.locator('#data-details').getAttribute('open'),null);
+ await phone.locator('#change-route').click();await phone.locator('#flow-refine').click();await phone.locator('#preferred-roads').fill('999999');await phone.locator('#apply-refinement').click();
+ await phone.waitForFunction(()=>document.querySelector('#flow-status').classList.contains('error'));assert.match(await phone.locator('#flow-status').innerText(),/אינן כוללות/);assert.equal(await phone.locator('#results').getAttribute('hidden'),'');
+ await phone.locator('#flow-refine').click();await phone.locator('#preferred-roads').fill('');broken=true;await phone.locator('#apply-refinement').click();await phone.waitForFunction(()=>document.querySelector('#flow-status').classList.contains('error'));assert.match(await phone.locator('#flow-status').innerText(),/חסרים נתוני רוח/);
+ broken=false;await phone.locator('#flow-refine').click();await phone.locator('#add-map-stop').click();await phone.locator('#map').click({position:{x:180,y:160}});await phone.waitForTimeout(500);assert.match(await phone.locator('[data-place^="stop-"] input').inputValue(),/מעבר במפה/);
+ console.log('Mobile progressive flow, route switching, animation pause, navigation links, road mismatch, missing weather and map waypoint verified.');
+ await mobile.setOffline(true);await phone.waitForTimeout(200);assert.equal(await phone.locator('#offline-banner').getAttribute('hidden'),null);
+ assert.deepEqual(errors,[]);await mobile.close();console.log('No browser page errors.');
 }finally{await browser.close();}
