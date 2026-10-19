@@ -3,102 +3,249 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#142b32">
-  <meta name="description" content="הרוח בדרך שלך. תכנון מסלול רכיבה עם תחזית רוח, משבים ורוח צד לפי שעת ההגעה לאורך הכבישים.">
-  <title>רוח בדרך — תחזית לרוכבים</title>
+  <meta name="theme-color" content="#0f2a31">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="רוח בדרך">
+  <meta name="description" content="תחזית רוח, משבים ורוח צד לאורך מסלול הרכיבה שלך, לפי שעת ההגעה לכל קטע.">
+  <title>רוח בדרך</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap">
   <link rel="stylesheet" href="./vendor/leaflet.css">
-  <link rel="stylesheet" href="./style.css">
-  <link rel="stylesheet" href="./experience.css">
-  <link rel="stylesheet" href="./flow.css">
+  <link rel="stylesheet" href="./app.css">
   <script src="./vendor/leaflet.js" defer></script>
   <script type="module" src="./app.mjs"></script>
 </head>
-<body data-flow="origin">
-<svg class="svg-library" aria-hidden="true"><defs>
+<body data-view="plan">
+<svg class="icons" aria-hidden="true"><defs>
   <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 8h12a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h6a3 3 0 1 1-3 3"/></symbol>
   <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
-  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M20 12H4m7-7-7 7 7 7"/></symbol>
-  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></symbol>
-  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v7a4 4 0 0 0 4 4h2m6-1V9a4 4 0 0 0-4-4h-2"/></symbol>
-  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M5 12h14m-6-7 7 7-7 7"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M19 12H5m6-7-7 7 7 7"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-road" viewBox="0 0 24 24"><path d="M8 3 4 21M16 3l4 18M12 4v3m0 4v3m0 4v3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.5"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
-  <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></symbol>
-  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+  <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
-  <symbol id="i-save" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4Z"/></symbol>
-  <symbol id="i-cross" viewBox="0 0 24 24"><path d="M3 12h18m-4-4 4 4-4 4M7 8l-4 4 4 4M12 3v4m0 10v4"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 4v16m0 0-3-3m3 3 3-3M17 20V4m0 0-3 3m3-3 3 3"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="m9 4-6 2v14l6-2 6 2 6-2V4l-6 2Z"/><path d="M9 4v14m6-12v14"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5Z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14m8-14v14"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
+  <symbol id="i-city" viewBox="0 0 24 24"><path d="M3 21h18M5 21V8l6-3v16m0-11h8v11M8 10v.5m0 3v.5m0 3v.5m7-4v.5m0 3v.5"/></symbol>
 </defs></svg>
-<header class="topbar">
-  <a href="./" class="brand" aria-label="רוח בדרך — דף הבית"><span class="brand-icon"><svg><use href="#i-wind"/></svg></span><span>רוח בדרך<small>תחזית לרוכבים</small></span></a>
-  <nav aria-label="ניווט ראשי"><a class="nav-current" href="#planner">תכנון רכיבה</a><button id="about-button" class="nav-button">איך קוראים את הרוח?</button></nav>
-  <button id="install-button" class="install-button"><svg><use href="#i-download"/></svg><span>האפליקציה בטלפון שלך</span></button>
-</header>
-<main class="shell">
-  <div class="ride-tripbar"><div><span class="step-kicker">הרכיבה שלך</span><h2 id="ride-trip-title"></h2></div><div><button type="button" id="change-route">החלפת דרך</button><button type="button" class="departure-edit">שינוי שעת יציאה</button></div></div>
-  <section class="hero" aria-labelledby="hero-title">
-    <div class="hero-copy"><div class="eyebrow"><span></span> הדרך שלך. התחזית שלך.</div><h1 id="hero-title">להרגיש את החופש.<br><em>להכיר את הרוח.</em></h1><p>כל מה שכדאי לדעת על הרוח בדרך שלך,<br class="desktop-break"> במפה אחת ובשפה פשוטה.</p><div class="hero-features"><span><svg><use href="#i-route"/></svg>לפי המסלול שלך</span><span><svg><use href="#i-clock"/></svg>לפי שעת הרכיבה</span><span><svg><use href="#i-cross"/></svg>כולל רוח צד ומשבים</span></div></div>
-    <div class="hero-art" aria-hidden="true"><svg viewBox="0 0 620 320" class="landscape"><defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#254c58"/><stop offset="1" stop-color="#16353e"/></linearGradient><linearGradient id="road-fill" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#355c65"/><stop offset="1" stop-color="#243f47"/></linearGradient></defs><circle cx="370" cy="90" r="63" fill="#f1d6a0" opacity=".93"/><path d="M0 196 106 114 210 177 311 137 413 190 534 104 620 155V320H0Z" fill="#305460"/><path d="m0 241 112-63 109 35 91-38 132 68 176-48v125H0Z" fill="#23434b"/><path d="M280 320C530 260 206 225 414 184" stroke="#78958d" stroke-width="77" fill="none"/><path d="M280 320C530 260 206 225 414 184" stroke="url(#road-fill)" stroke-width="69" fill="none"/><path d="M280 320C530 260 206 225 414 184" stroke="#b7c5b5" stroke-width="2" stroke-dasharray="12 13" fill="none"/><g fill="#5b8076"><path d="m65 265 15-48 15 48Zm18 18 19-64 19 64Zm451-25 17-55 17 55Zm36 27 16-51 16 51Z"/></g><g stroke="#a9d8c6" fill="none" stroke-width="2" stroke-linecap="round" class="hero-air"><path d="M94 92h97c25 0 25-34 3-34-12 0-17 7-17 14M74 108h155M127 124h92c21 0 21 29 0 29-10 0-15-5-15-11"/><path d="M457 52h70m-85 16h105m-62 16h61" opacity=".5"/></g><g transform="translate(350 247) rotate(-15)"><circle cx="-24" cy="23" r="14" fill="#132c34" stroke="#aec4b9" stroke-width="3"/><circle cx="34" cy="23" r="14" fill="#132c34" stroke="#aec4b9" stroke-width="3"/><path d="m-24 23 20-27 18 27h-38l39-12 19 12-13-34h-10" fill="none" stroke="#d4ee95" stroke-width="5" stroke-linejoin="round"/><path d="m-9-8 14-18 16 12 6 5M5-26l-10 27 15 14" stroke="#eff3d8" stroke-width="8" fill="none" stroke-linecap="round"/><circle cx="10" cy="-43" r="11" fill="#d4ee95"/><path d="m12-47 9 3" stroke="#142b32" stroke-width="4"/></g></svg><span class="art-caption"><i></i> קצת יותר מידע. הרבה יותר בהירות.</span></div>
-  </section>
-  <div id="offline-banner" class="notice warning" hidden>אין חיבור לאינטרנט. לתחזית עדכנית יש להתחבר מחדש.</div>
-  <div class="workspace">
-    <aside class="planner panel" id="planner">
-      <div class="panel-heading"><div><span class="step-kicker">מתכננים את הרכיבה</span><h2>אז, לאן יוצאים?</h2></div><span class="heading-badge"><svg><use href="#i-route"/></svg></span></div>
-      <form id="planner-form"><fieldset id="planner-fields">
-        <div class="form-section-title"><span>1</span><b>בוחרים את הדרך</b></div>
-        <div id="locations" class="locations"></div>
-        <div class="waypoint-actions"><button class="text-button" type="button" id="add-stop"><svg><use href="#i-plus"/></svg>הוספת נקודת מעבר</button><button class="icon-button" id="swap" type="button" title="החלפת מוצא ויעד" aria-label="החלפת מוצא ויעד">⇅</button></div>
-        <details class="roads-options"><summary><svg><use href="#i-route"/></svg>רוצה לעבור בכביש מסוים?<span>⌄</span></summary><div><label class="label" for="roads">מספרי כבישים מועדפים</label><input id="roads" class="plain-input" placeholder="למשל: 1, 38, 395" inputmode="numeric" autocomplete="off" dir="auto"><p class="field-hint">נבדוק אם יש חלופה שעוברת בהם. לבחירת קטע מדויק, אפשר להוסיף נקודת מעבר במפה.</p></div></details>
-        <div class="divider"></div>
-        <div class="form-section-title"><span>2</span><b>מתי הרכיבה?</b><small>שעון ישראל</small></div>
-        <div class="quick-times"><button type="button" data-day="0">היום</button><button type="button" data-day="1">מחר</button><button type="button" id="soon"><svg><use href="#i-clock"/></svg>בעוד חצי שעה</button></div>
-        <div class="date-grid"><label>תאריך<input id="date" type="date" required aria-label="תאריך יציאה"></label><label>שעת יציאה<input id="time" type="time" required aria-label="שעת יציאה"></label></div>
-        <button type="submit" id="check-button" class="primary-button"><svg><use href="#i-wind"/></svg><span>מה הרוח בדרך שלי?</span><svg class="button-arrow"><use href="#i-arrow"/></svg></button>
-        <p class="cta-note">תחזית לפי שעת ההגעה שלך בכל נקודה</p>
-      </fieldset></form>
-      <div id="status" class="status" role="status" aria-live="polite" hidden></div>
-      <div class="saved-actions"><button type="button" class="text-button" id="save-route"><svg><use href="#i-save"/></svg>שמירת המסלול</button><button type="button" class="text-button" id="load-route" hidden>המסלול השמור שלי</button></div>
-      <div class="planner-foot"><svg><use href="#i-info"/></svg><span>הרוח היא רק חלק מהתמונה. התחזית מסייעת בתכנון ואינה אישור לבטיחות הרכיבה.</span></div>
-    </aside>
-    <section class="journey" aria-label="מפה ותחזית לאורך הדרך">
-      <section id="route-choices" class="route-choices panel" hidden aria-labelledby="route-choices-heading"><div class="choices-heading"><div><span class="step-kicker">הדרכים שלך ליעד</span><h2 id="route-choices-heading">באיזו דרך נוסעים?</h2></div><span id="route-options-count"></span></div><p class="traffic-caption"><svg><use href="#i-clock"/></svg>זמנים משוערים ללא פקקים · המהירה באומדן נבחרת אוטומטית</p><div id="route-option-cards" class="route-option-cards"></div><div class="navigation-actions"><div><b>רוצה לבדוק פקקים לפני היציאה?</b><span>פותחים את הדרך באפליקציית הניווט שלך</span></div><div class="navigation-buttons"><a id="google-navigation" target="_blank" rel="noopener"><span class="provider-icon google">G</span>Google Maps<svg><use href="#i-arrow"/></svg></a><a id="waze-navigation" target="_blank" rel="noopener"><span class="provider-icon waze"><svg><use href="#i-route"/></svg></span>Waze<svg><use href="#i-arrow"/></svg></a></div><p id="navigation-note"></p></div></section>
-      <div class="map-panel panel">
-        <div class="map-top"><div class="map-title"><span class="step-kicker">רואים את הדרך</span><h2>המסלול שלך, במבט אחד</h2></div><span class="live-pill" id="map-state"><i></i>לפני בדיקה</span></div>
-        <div class="map-wrap"><div id="map" aria-label="מפת מסלול אינטראקטיבית"></div><div class="map-empty" id="map-empty"><span class="empty-icon"><svg><use href="#i-wind"/></svg></span><div><b>מה מחכה לך בדרך?</b><span>בחר מסלול ושעת יציאה, ונבדוק יחד.</span></div></div><div class="map-pick" id="map-pick" hidden><span></span><button type="button" aria-label="ביטול בחירת נקודה">ביטול</button></div><button class="fit-button" id="fit-map" type="button" aria-label="הצגת המסלול המלא" title="הצגת המסלול המלא"><svg><use href="#i-locate"/></svg></button></div>
-        <div class="map-bottom"><div class="legend"><span>משב צד משוער <small>בקמ״ש</small></span><span><i class="dot low"></i>עד 20</span><span><i class="dot mid"></i>20–35</span><span><i class="dot high"></i>35+</span></div><span class="legend-note">הצבעים מתארים עוצמה, לא בטיחות</span></div>
+
+<!-- ===================== מסך תכנון ===================== -->
+<section id="view-plan" class="view" aria-labelledby="plan-title">
+  <header class="app-bar">
+    <div class="brand"><span class="brand-mark"><svg><use href="#i-wind"/></svg></span><span><b>רוח בדרך</b><small>תחזית רוח לרוכבים</small></span></div>
+    <button type="button" class="round-button ghost" id="open-about" aria-label="איך זה עובד?"><svg><use href="#i-info"/></svg></button>
+  </header>
+
+  <div class="plan-body">
+    <h1 id="plan-title" class="plan-title">לאן רוכבים היום?</h1>
+
+    <div class="trip-card" id="trip-card">
+      <div id="trip-rows"></div>
+      <div class="trip-tools" id="trip-tools" hidden>
+        <button type="button" class="chip" id="add-stop"><svg><use href="#i-plus"/></svg>נקודת מעבר</button>
+        <button type="button" class="chip" id="swap-trip" aria-label="החלפת מוצא ויעד"><svg><use href="#i-swap"/></svg>הפוך כיוון</button>
+        <button type="button" class="chip" id="new-trip"><svg><use href="#i-refresh"/></svg>נסיעה חדשה</button>
       </div>
-      <div id="results" hidden>
-        <div class="result-heading"><div><span class="step-kicker">מבינים את התחזית</span><h2 id="result-title">התמונה הגדולה של הרכיבה</h2></div><span id="fetch-time"></span></div>
-        <div class="forecast-insight" id="forecast-insight"></div>
-        <div class="metric-grid" id="metrics"></div>
-        <div class="route-summary" id="route-summary"></div>
-        <section class="rider-panel panel" aria-labelledby="rider-heading">
-          <div class="rider-heading"><div><span class="step-kicker">מנקודת המבט שלך</span><h3 id="rider-heading">איך הרוח פוגשת אותך?</h3></div><span class="point-counter" id="point-counter"></span></div>
-          <div class="rider-body"><div class="rider-visual"><svg class="rider-diagram" viewBox="0 0 280 280" role="img" aria-label="מבט מלמעלה על אופנוע וכיוון תנועת האוויר ביחס אליו"><defs><pattern id="road-grain" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".6" fill="#fff" opacity=".05"/></pattern><marker id="wind-arrow-head" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="m1 1 7 4-7 4" fill="none" stroke="#278376" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker></defs><circle cx="140" cy="140" r="130" fill="#f1f5ee"/><path d="M84 0h112v280H84Z" fill="#203d45"/><path d="M84 0h112v280H84Z" fill="url(#road-grain)"/><path d="M93 0v280m94-280v280" stroke="#7a9492" stroke-width="1"/><path d="M140 0v280" stroke="#d6dfcd" stroke-width="2" stroke-dasharray="14 15" opacity=".5"/><rect x="116" y="95" width="48" height="97" rx="24" fill="#142b32" opacity=".17" transform="translate(4 5)"/><g class="motorcycle"><rect x="134" y="80" width="12" height="28" rx="5" fill="#0e232a" stroke="#a6b6ad" stroke-width="2"/><rect x="132" y="178" width="16" height="30" rx="5" fill="#0e232a" stroke="#a6b6ad" stroke-width="2"/><path d="m127 103-7 31 6 45 14 15 14-15 6-45-7-31Z" fill="#d4ee95" stroke="#bdd783" stroke-width="2"/><path d="M132 111q8-9 16 0l6 18-14 12-14-12Z" fill="#91af6f"/><path d="m130 156 10-6 10 6-2 22-8 9-8-9Z" fill="#19343b"/><path d="M119 124h-12m54 0h12m-66 0-5-9m71 9 5-9" stroke="#e5ebd7" stroke-width="4" stroke-linecap="round"/><ellipse cx="101" cy="113" rx="5" ry="3" fill="#b5d5ce"/><ellipse cx="179" cy="113" rx="5" ry="3" fill="#b5d5ce"/><path d="m131 97 9-6 9 6" stroke="#f5f7d7" stroke-width="3" fill="none"/></g><g id="wind-flow" transform="rotate(90 140 140)" stroke="#278376" stroke-width="3" fill="none" stroke-linecap="round"><path d="M111 30v56m29-71v69m29-54v56" marker-end="url(#wind-arrow-head)"/><path class="flow-dash" d="M111 26v47m29-62v61m29-47v47" stroke="#85bcab" stroke-width="2" stroke-dasharray="5 12"/></g><g fill="#6d827c" font-size="10" font-family="Heebo,Arial,sans-serif" text-anchor="middle" stroke="none"><text x="140" y="17" fill="#d5dfd0">קדימה ↑</text><text x="36" y="145">שמאל</text><text x="245" y="145">ימין</text></g></svg><span class="visual-caption">מבט מלמעלה · החצים מראים לאן האוויר נע</span></div>
-          <div class="point-info" aria-live="polite" aria-atomic="true"><div id="point-road" class="point-road"></div><div id="point-location" class="point-location"></div><div class="wind-direction-pill" id="point-direction"></div><div class="point-values"><div><span>רוח</span><b id="point-wind"></b><small>קמ״ש</small></div><div><span>משבים</span><b id="point-gust"></b><small>קמ״ש</small></div><div class="point-cross-value"><span>משב צד משוער</span><b id="point-cross"></b><small>קמ״ש</small></div></div><p id="point-explanation"></p></div></div>
-          <div class="tour-controls"><button type="button" id="play-ride" aria-pressed="false"><span aria-hidden="true">▶</span>סיור בדרך ובכיווני הרוח</button><span>המחשה לתכנון הרכיבה</span></div>
-          <div class="scrubber"><div class="scrubber-label"><label for="route-scrubber">הזז כדי לבדוק נקודה אחרת בדרך</label><span id="scrubber-distance"></span></div><div class="scrubber-controls"><button type="button" id="previous-point" class="icon-button" aria-label="הנקודה הקודמת">→</button><input type="range" id="route-scrubber" min="0" max="1" value="0" step="1" aria-label="נקודה לאורך המסלול"><button type="button" id="next-point" class="icon-button" aria-label="הנקודה הבאה">←</button></div><div class="scrubber-endpoints"><span id="scrubber-start"></span><span id="scrubber-end"></span></div></div>
-        </section>
-        <div class="chart-panel panel"><div class="chart-head"><div><span class="step-kicker">לאורך כל הדרך</span><h3>מתי הרוח מתחזקת?</h3></div><div class="chart-legend"><span class="line-key"></span> רוח <span class="line-key gust"></span> משבים</div></div><div id="wind-chart"></div><p class="chart-caption">מהירות בקמ״ש · מרחק מתחילת הרכיבה</p></div>
-        <details class="table-panel panel" id="data-details"><summary class="table-heading"><span><svg><use href="#i-route"/></svg><b>כל הנקודות והנתונים</b></span><span id="sample-count"></span><span class="disclosure-arrow">⌄</span></summary><div class="table-scroll"><table><thead><tr><th>מקטע / מרחק</th><th>הגעה</th><th>רוח</th><th>משב</th><th>רוח צד</th><th>משב צד*</th></tr></thead><tbody id="segment-rows"></tbody></table></div><div class="table-foot">כל הערכים בקמ״ש. הכיוון הוא הכיוון שממנו הרוח נושבת.<br>*משב הצד מחושב בהנחה שכיוון המשב דומה לכיוון הרוח השעתית.</div></details>
-        <div class="forecast-footnote"><svg><use href="#i-info"/></svg><p id="forecast-notes"></p></div>
+    </div>
+
+    <div class="search-panel" id="search-panel" hidden role="listbox" aria-label="תוצאות חיפוש"></div>
+
+    <div id="trip-options" hidden>
+      <div class="option-row">
+        <button type="button" class="option-pill" id="open-departure"><svg><use href="#i-clock"/></svg><span><small>יציאה</small><b id="departure-label">עכשיו</b></span></button>
+        <button type="button" class="option-pill" id="open-roads"><svg><use href="#i-road"/></svg><span><small>כבישים</small><b id="roads-label">כל הכבישים</b></span></button>
       </div>
-      <div class="getting-started" id="getting-started"><div class="guide-card"><span class="guide-icon mint"><svg><use href="#i-route"/></svg></span><b>הדרך שאתה בוחר</b><p>גם בכביש האהוב עליך, הרוח משתנה ממקטע למקטע.</p></div><div class="guide-card"><span class="guide-icon sand"><svg><use href="#i-clock"/></svg></span><b>השעה עושה הבדל</b><p>נבדוק מה צפוי כשאתה מגיע, ולא רק כשאתה יוצא.</p></div><div class="guide-card"><span class="guide-icon blue"><svg><use href="#i-cross"/></svg></span><b>מבינים מאיזה צד</b><p>רוח פנים, גב או צד — ביחס לכיוון הנסיעה שלך.</p></div></div>
-      <section class="quick-routes" id="quick-routes"><div><span class="step-kicker">אפשר להתחיל מכאן</span><h3>בוחרים כיוון, ומשם מדייקים</h3></div><div class="preset-list"><button type="button" data-preset="jerusalem"><span>אל ההרים</span><b>תל אביב ← ירושלים</b><svg><use href="#i-arrow"/></svg></button><button type="button" data-preset="coast"><span>לאורך החוף</span><b>תל אביב ← חיפה</b><svg><use href="#i-arrow"/></svg></button><button type="button" data-preset="desert"><span>קצת שקט בדרום</span><b>באר שבע ← מצפה רמון</b><svg><use href="#i-arrow"/></svg></button></div></section>
+    </div>
+
+    <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+
+    <section id="routes" class="routes" hidden aria-labelledby="routes-title">
+      <div class="section-head"><h2 id="routes-title">בחר דרך</h2><span id="routes-meta"></span></div>
+      <div id="route-cards" class="route-cards"></div>
+      <p class="fine-print">זמני נסיעה משוערים ללא פקקים. הצבע מראה את משב הצד לאורך כל דרך.</p>
+    </section>
+
+    <section id="home-extras" class="home-extras">
+      <div id="recent-block" hidden>
+        <div class="section-head"><h2>נסיעות אחרונות</h2></div>
+        <div id="recent-trips" class="recent-trips"></div>
+      </div>
+      <div class="how-card">
+        <div class="how-item"><span class="how-icon a"><svg><use href="#i-pin"/></svg></span><p><b>בוחרים לאן</b>מוצא, יעד ואם רוצים — כבישים ונקודות מעבר.</p></div>
+        <div class="how-item"><span class="how-icon b"><svg><use href="#i-clock"/></svg></span><p><b>לפי שעת ההגעה</b>התחזית מחושבת לכל קטע בשעה שתגיע אליו.</p></div>
+        <div class="how-item"><span class="how-icon c"><svg><use href="#i-wind"/></svg></span><p><b>מאיזה צד נושבת</b>רוח צד, פנים או גב — ביחס לכיוון הנסיעה.</p></div>
+      </div>
     </section>
   </div>
-  <footer><span class="footer-brand"><svg><use href="#i-wind"/></svg>רוח בדרך <span>·</span> קצת יותר מידע לפני שיוצאים.</span><div>תחזית: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · מסלולים: <a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">OSRM / FOSSGIS</a> · יישובים: <a href="https://www.geonames.org/" target="_blank" rel="noopener">GeoNames</a> · מפה: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></div></footer>
-</main>
-<section class="trip-flow" id="trip-flow" aria-labelledby="flow-title"><div class="flow-progress" aria-label="שלבי תכנון"><i class="current"></i><i></i><i></i></div><div class="flow-question"><button type="button" id="flow-back" hidden>→ חזרה</button><span class="flow-kicker" id="flow-kicker">מתחילים בדרך שלך</span><h1 id="flow-title">מאיפה יוצאים?</h1><p id="flow-description">יישוב, מקום מוכר או המיקום שלך.</p><div id="flow-fields"></div><button type="button" id="flow-continue" class="primary-button"><span>ממשיכים</span><svg><use href="#i-arrow"/></svg></button><button type="button" class="departure-edit flow-departure" id="flow-departure" hidden></button><div id="flow-status" class="status" role="status" hidden></div></div><div id="flow-route-summary" hidden></div><div id="flow-routes"></div><div id="ride-navigation"></div><div class="flow-promise"><svg><use href="#i-wind"/></svg><span>בוחרים דרך. מגלים מאיזה צד נושבת הרוח.</span></div></section>
-<dialog id="departure-dialog"><div class="dialog-head"><h2>מתי יוצאים?</h2><button class="icon-button" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div><div class="dialog-body"><p>התחזית תתאים לשעת ההגעה שלך לאורך הדרך, לפי שעון ישראל.</p><div class="flow-date-fields"><label>תאריך<input type="date" id="flow-date" required></label><label>שעת יציאה<input type="time" id="flow-time" required></label></div><button type="button" id="apply-departure" class="primary-button">עדכון שעת היציאה</button><p id="departure-error" role="status"></p></div></dialog>
-<dialog id="flow-map-dialog"><div class="dialog-head"><h2>בוחרים נקודה במפה</h2><button class="icon-button" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div><div id="flow-map-host"></div></dialog>
-<div class="mobile-dock"><button type="button" id="back-to-planner"><svg><use href="#i-route"/></svg><span>המסלול שלי</span></button><button type="submit" form="planner-form" id="mobile-check"><svg><use href="#i-wind"/></svg><span>בדיקת הרוח</span><svg><use href="#i-arrow"/></svg></button></div>
-<dialog id="about-dialog"><div class="dialog-head"><h2>מה עומד מאחורי התחזית?</h2><button class="icon-button" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div><div class="dialog-body"><p>מחשבים מסלול נסיעה באמצעות OSRM, דוגמים עד 50 נקודות לאורכו, ומקבלים תחזית שעתית של Open-Meteo לכל נקודה לפי שעת ההגעה המשוערת.</p><h3>רוח צד, בשפה פשוטה</h3><p>זוהי עוצמת הרוח שנושבת לרוחב כיוון הכביש. רוח שמגיעה ישר מלפנים או מאחור תורמת פחות לרכיב הצד. בעיקול הבא הכיוון כבר עשוי להשתנות.</p><h3>מה חשוב להבין?</h3><ul><li>זו תחזית מודל בגובה 10 מטר, ולא מדידה בכביש. תנאי שטח, גשרים, מנהרות ומשאיות אינם מחושבים.</li><li>מהירות הרוח מחושבת באינטרפולציה וקטורית בין שעות סמוכות. למשבים נלקח הערך המרבי מבין שתי השעות, ולא ממוצע.</li><li>כיוון המשבים אינו מסופק. משב הצד הוא אומדן לפי כיוון הרוח השעתית, ועלול להיות שונה בפועל.</li><li>הצבעים מציינים טווחי עוצמה בלבד. אין סף רוח אוניברסלי שמבטיח רכיבה בטוחה.</li><li>המסלול מבוסס פרופיל רכב, ללא תנועה בזמן אמת, עצירות, חסימות או בדיקת התאמה לאופנוע. יש לבדוק את הדרך בפועל.</li><li>כבישים מועדפים נבדקים לפי מספרי הכבישים בחלופות שהשירות מחזיר. נקודת מעבר במפה מאפשרת לדייק את בחירת הקטע.</li></ul><h3>נתונים ופרטיות</h3><p>נקודות המסלול נשלחות לשירות המסלולים ולשירות התחזית לצורך החישוב. מסלול שנשמר נשמר בדפדפן שלך בלבד. תחזיות אינן נשמרות לשימוש ללא אינטרנט. השירותים הציבוריים מיועדים כאן לשימוש אישי לא מסחרי ותלויים בזמינות ובמגבלות הספקים.</p><p><a href="https://open-meteo.com/en/docs" target="_blank" rel="noopener">מקור התחזית והגדרות הנתונים</a> · <a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">שירות המסלולים ותנאי השימוש</a></p></div></dialog>
-<dialog id="install-dialog"><div class="dialog-head"><h2>רוח בדרך, על מסך הבית</h2><button class="icon-button" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div><div class="dialog-body"><div class="install-preview"><img src="./icon-192.png" width="76" height="76" alt="סמל רוח בדרך"><b>רוח בדרך</b></div><p>באנדרואיד: פתח את הקישור ב־Chrome, לחץ על תפריט שלוש הנקודות ובחר <b>״הוספה למסך הבית״</b> או <b>״התקנת אפליקציה״</b>.</p><button id="native-install" class="primary-button" hidden>התקנת האפליקציה</button><p>זו אפליקציית אינטרנט שמופיעה עם סמל בטלפון. לחישוב מסלול ותחזית נדרש חיבור לאינטרנט. אם מתבקשת כניסה, השתמש בחשבון שבו נוצרה האפליקציה.</p></div></dialog>
-<dialog id="refine-dialog"><div class="dialog-head"><h2>מדייקים את הדרך</h2><button class="icon-button" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div><div class="dialog-body"><label for="preferred-roads">כבישים שתרצה לעבור בהם</label><input id="preferred-roads" class="plain-input" placeholder="למשל: 1, 38, 395" inputmode="numeric"><p class="field-hint">נציג חלופות הכוללות את המספרים שבחרת. אפשר גם לבחור נקודת מעבר על הכביש במפה.</p><div id="flow-stop-list"></div><button type="button" id="add-map-stop" class="text-button"><svg><use href="#i-plus"/></svg>הוספת נקודת מעבר במפה</button><button type="button" id="apply-refinement" class="primary-button">בדיקת הדרכים מחדש</button><p id="refine-error" role="status"></p></div></dialog>
+
+  <div id="install-banner" class="install-banner" hidden>
+    <span class="brand-mark small"><svg><use href="#i-wind"/></svg></span>
+    <p><b>להוסיף למסך הבית?</b>פותחים בלחיצה אחת, כמו אפליקציה.</p>
+    <button type="button" id="install-now" class="mini-button">הוספה</button>
+    <button type="button" id="install-dismiss" class="round-button ghost small" aria-label="לא עכשיו"><svg><use href="#i-close"/></svg></button>
+  </div>
+</section>
+
+<!-- ===================== מסך רכיבה ===================== -->
+<section id="view-ride" class="view" hidden aria-labelledby="ride-title">
+  <div class="ride-map-wrap">
+    <div id="ride-map" dir="ltr" aria-label="מפת המסלול עם חיצי רוח"></div>
+    <div class="map-top">
+      <button type="button" class="round-button raised" id="ride-back" aria-label="חזרה לבחירת דרך"><svg><use href="#i-back"/></svg></button>
+      <div class="map-title"><b id="ride-title"></b><span id="ride-subtitle"></span></div>
+      <button type="button" class="round-button raised" id="fit-route" aria-label="הצגת כל המסלול"><svg><use href="#i-fit"/></svg></button>
+    </div>
+    <div class="map-legend" aria-hidden="true"><span><i class="low"></i>חלשה</span><span><i class="mid"></i>מורגשת</span><span><i class="high"></i>חזקה</span></div>
+  </div>
+
+  <div class="sheet" id="ride-sheet">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div id="stale-banner" class="stale-banner" hidden><span>התחזית כבר לא עדכנית.</span><button type="button" id="refresh-forecast" class="mini-button"><svg><use href="#i-refresh"/></svg>לעדכן</button></div>
+
+    <div id="verdict" class="verdict"></div>
+    <div id="metrics" class="metrics"></div>
+
+    <section class="card point-card" aria-labelledby="point-heading">
+      <div class="card-head"><h2 id="point-heading">הרוח לאורך הדרך</h2><span id="point-counter" class="muted"></span></div>
+      <div class="strip-wrap">
+        <div id="wind-strip" class="wind-strip" aria-hidden="true"></div>
+        <input type="range" id="scrubber" min="0" max="1" value="0" step="1" aria-label="נקודה לאורך המסלול">
+      </div>
+      <div class="strip-ends"><span id="strip-start"></span><span id="strip-end"></span></div>
+
+      <div class="point-body">
+        <div class="compass-wrap">
+          <svg class="compass" viewBox="0 0 200 200" role="img" aria-label="המחשת כיוון הרוח ביחס לאופנוע">
+            <defs>
+              <marker id="arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M1 1 8 5 1 9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></marker>
+            </defs>
+            <circle cx="100" cy="100" r="96" class="compass-bg"/>
+            <rect x="72" y="4" width="56" height="192" class="compass-road"/>
+            <path d="M100 8v184" class="compass-lane"/>
+            <g class="compass-bike">
+              <rect x="95" y="58" width="10" height="20" rx="4" class="tyre"/>
+              <rect x="94" y="124" width="12" height="22" rx="4" class="tyre"/>
+              <path d="M90 76 86 98l4 30 10 10 10-10 4-30-4-22Z" class="body"/>
+              <path d="M84 84h-9m50 0h-9" class="bars"/>
+              <circle cx="100" cy="104" r="8" class="helmet"/>
+            </g>
+            <g id="compass-wind" class="compass-wind">
+              <path d="M70 14v38M100 6v44M130 14v38" marker-end="url(#arrowhead)"/>
+              <path d="M70 10v30M100 2v34M130 10v30" class="flow"/>
+            </g>
+            <text x="100" y="196" class="compass-label" text-anchor="middle">כיוון הנסיעה ↑</text>
+          </svg>
+        </div>
+        <div class="point-info" aria-live="polite">
+          <b id="point-road" class="point-road"></b>
+          <span id="point-where" class="muted"></span>
+          <span id="point-relation" class="relation-chip"></span>
+        </div>
+        <div class="point-values">
+          <div><small>רוח</small><b id="point-wind"></b></div>
+          <div><small>משבים</small><b id="point-gust"></b></div>
+          <div class="accent"><small>משב צד</small><b id="point-cross"></b></div>
+        </div>
+      </div>
+
+      <div class="player">
+        <button type="button" class="round-button" id="prev-point" aria-label="הנקודה הקודמת"><svg><use href="#i-back"/></svg></button>
+        <button type="button" class="play-button" id="play-tour" aria-pressed="false"><svg><use href="#i-play"/></svg><span>נסיעה וירטואלית</span></button>
+        <button type="button" class="round-button" id="next-point" aria-label="הנקודה הבאה"><svg><use href="#i-next"/></svg></button>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="chart-heading">
+      <div class="card-head"><h2 id="chart-heading">עוצמת הרוח לאורך הדרך</h2><span class="chart-key"><i class="k-wind"></i>רוח <i class="k-gust"></i>משבים</span></div>
+      <div id="chart"></div>
+    </section>
+
+    <section class="card traffic-card" aria-labelledby="traffic-heading">
+      <h2 id="traffic-heading">לבדוק פקקים ולצאת לדרך</h2>
+      <div class="nav-buttons">
+        <a id="nav-google" class="nav-button" target="_blank" rel="noopener"><span class="nav-logo g">G</span>Google Maps</a>
+        <a id="nav-waze" class="nav-button" target="_blank" rel="noopener"><span class="nav-logo w"><svg><use href="#i-pin"/></svg></span>Waze</a>
+      </div>
+      <p id="nav-note" class="fine-print"></p>
+    </section>
+
+    <details class="card details-card">
+      <summary><span>כל הנקודות והנתונים</span><span id="sample-count" class="muted"></span></summary>
+      <div class="table-scroll"><table><thead><tr><th>קטע</th><th>הגעה</th><th>רוח</th><th>משב</th><th>משב צד</th></tr></thead><tbody id="sample-rows"></tbody></table></div>
+    </details>
+
+    <p id="forecast-note" class="fine-print footnote"></p>
+  </div>
+</section>
+
+<!-- ===================== חלונות ===================== -->
+<dialog id="departure-dialog" class="sheet-dialog" aria-labelledby="departure-heading">
+  <div class="dialog-head"><h2 id="departure-heading">מתי יוצאים?</h2><button type="button" class="round-button ghost" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div>
+  <div class="quick-grid" id="departure-quick"></div>
+  <div class="custom-time">
+    <span>או בוחרים בדיוק:</span>
+    <div class="date-time"><label>יום<select id="dep-day"></select></label><label>שעה<input type="time" id="dep-time" step="300"></label></div>
+    <button type="button" class="primary-button" id="dep-apply">עדכון שעת היציאה</button>
+    <p id="dep-error" class="form-error" role="alert"></p>
+  </div>
+  <p class="fine-print">לפי שעון ישראל. אפשר לבדוק עד שישה ימים קדימה.</p>
+</dialog>
+
+<dialog id="roads-dialog" class="sheet-dialog" aria-labelledby="roads-heading">
+  <div class="dialog-head"><h2 id="roads-heading">באיזה כבישים לעבור?</h2><button type="button" class="round-button ghost" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div>
+  <p class="dialog-text">כתוב מספרי כבישים, ונציג רק דרכים שעוברות בהם.</p>
+  <input id="roads-input" class="text-input" placeholder="למשל: 1, 38" inputmode="numeric" autocomplete="off" dir="ltr">
+  <div class="road-suggest" id="road-suggest"></div>
+  <p class="fine-print">כביש לא מופיע? הוסף נקודת מעבר על הכביש הרצוי (למשל צומת או יישוב שעליו) — כך הדרך תיאלץ לעבור שם.</p>
+  <div class="dialog-actions"><button type="button" class="secondary-button" id="roads-clear">כל הכבישים</button><button type="button" class="primary-button" id="roads-apply">חיפוש דרכים</button></div>
+  <p id="roads-error" class="form-error" role="alert"></p>
+</dialog>
+
+<dialog id="map-dialog" class="full-dialog" aria-labelledby="map-dialog-title">
+  <div id="pick-map" dir="ltr"></div>
+  <div class="pick-crosshair" aria-hidden="true"><svg><use href="#i-pin"/></svg></div>
+  <div class="map-top"><button type="button" class="round-button raised" data-close aria-label="ביטול"><svg><use href="#i-close"/></svg></button><div class="map-title"><b id="map-dialog-title">הזז את המפה לנקודה</b><span>הסיכה באמצע המסך היא הנקודה שתיבחר</span></div><span></span></div>
+  <div class="pick-actions"><button type="button" class="primary-button" id="pick-confirm"><svg><use href="#i-pin"/></svg>בחירת הנקודה הזו</button></div>
+</dialog>
+
+<dialog id="about-dialog" class="sheet-dialog tall" aria-labelledby="about-heading">
+  <div class="dialog-head"><h2 id="about-heading">איך זה עובד?</h2><button type="button" class="round-button ghost" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div>
+  <div class="about">
+    <p>האפליקציה מחשבת את הדרכים ליעד, דוגמת עד 50 נקודות לאורך כל דרך, ובודקת לכל נקודה את תחזית הרוח <b>לשעה שבה תגיע אליה</b>.</p>
+    <h3>מה זה "משב צד"?</h3>
+    <p>החלק של המשב שנושב לרוחב הכביש — זה מה שדוחף את האופנוע הצידה. רוח שמגיעה ישר מלפנים או מאחור כמעט לא תורמת לו.</p>
+    <h3>הצבעים</h3>
+    <p><span class="dot low"></span> עד 20 קמ״ש · <span class="dot mid"></span> 20–35 · <span class="dot high"></span> מעל 35. הצבעים מתארים עוצמה בלבד — הם לא קובעים אם בטוח לרכוב.</p>
+    <h3>חשוב לדעת</h3>
+    <ul>
+      <li>זו תחזית מודל בגובה 10 מטר, לא מדידה על הכביש. גשרים, מנהרות, עמקים ומשאיות לא מחושבים.</li>
+      <li>כיוון המשבים לא מסופק בתחזית, ולכן משב הצד הוא אומדן לפי כיוון הרוח.</li>
+      <li>זמני הנסיעה הם אומדן לרכב, בלי פקקים ועצירות. לפקקים — כפתורי Google Maps ו־Waze.</li>
+      <li>התחזית מתעדכנת: בדוק שוב לפני היציאה.</li>
+    </ul>
+    <h3>להתקין בטלפון</h3>
+    <p>באנדרואיד: פתח ב־Chrome ← תפריט ⋮ ← <b>"הוספה למסך הבית"</b> או <b>"התקנת אפליקציה"</b>. באייפון: ב־Safari ← שיתוף ← <b>"הוסף למסך הבית"</b>.</p>
+    <h3>מקורות</h3>
+    <p class="sources">תחזית: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · מסלולים: <a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">OSRM / FOSSGIS</a> · חיפוש: <a href="https://www.geonames.org/" target="_blank" rel="noopener">GeoNames</a>, <a href="https://nominatim.org/" target="_blank" rel="noopener">Nominatim</a> · מפה: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>. המסלולים נשמרים רק בטלפון שלך.</p>
+  </div>
+</dialog>
+
+<div id="offline-banner" class="offline-banner" hidden>אין חיבור לאינטרנט — צריך חיבור כדי לבדוק את הרוח.</div>
 <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>
