@@ -2,3 +2,4 @@ node_modules/
 artifacts/
 *.tar.gz
 .sites-runtime/
+.phone.env

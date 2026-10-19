@@ -1,6 +1,7 @@
 import { ZONE, localParts, addDays, departureEpoch, validateDeparture, parseRoads, chooseRoute, sampleRoute, roadRefs, weatherAt, band, directionName } from './core.mjs';
 import { windRelation } from './view.mjs';
 import { navigationLinks, forecastPlan } from './navigation.mjs';
+import { Ride3D, supports3D } from './ride3d.mjs';
 
 /* ---------- עזרים ---------- */
 const $ = q => document.querySelector(q);
@@ -40,6 +41,7 @@ let active = 0;
 let fetchedAt = 0;
 let job = 0, busy = false;
 let knownRoads = [];
+let mode = store.get('ruach-view-mode', supports3D() ? '3d' : '2d'), r3d = null;
 let rideMap, rideLayers, pickMap, selected = 0, tourTimer, compassAngle = 0, installPrompt;
 
 /* ---------- הודעות ---------- */
@@ -55,10 +57,16 @@ function setStatus(html, type = '') {
   el.innerHTML = html; el.hidden = !html;
 }
 
-async function fetchJSON(url, timeout = 30000) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeout), cache: 'no-store' });
-  if (!response.ok) throw new Error(response.status === 429 ? 'השירות עמוס כרגע. נסה שוב בעוד דקה.' : 'שירות הנתונים לא זמין כרגע. נסה שוב בעוד מעט.');
-  return response.json();
+// שירותים ציבוריים נופלים לפעמים לשניות; מנסים שוב עד פעמיים לפני שמציגים שגיאה.
+async function fetchJSON(url, timeout = 30000, attempts = 3) {
+  for (let attempt = 1; ; attempt++) {
+    let response;
+    try { response = await fetch(url, { signal: AbortSignal.timeout(timeout), cache: 'no-store' }); }
+    catch (e) { if (attempt >= attempts || e.name === 'TimeoutError') throw e; await new Promise(r => setTimeout(r, 1200 * attempt)); continue; }
+    if (response.ok) return response.json();
+    if (attempt < attempts && (response.status >= 500 || response.status === 429)) { await new Promise(r => setTimeout(r, 1500 * attempt)); continue; }
+    throw new Error(response.status === 429 ? 'השירות עמוס כרגע. נסה שוב בעוד דקה.' : 'שירות הנתונים לא זמין כרגע. נסה שוב בעוד מעט.');
+  }
 }
 
 /* ===================== מסך תכנון ===================== */
@@ -494,7 +502,7 @@ function openRide(index) {
   renderRide();
 }
 function showPlan() {
-  stopTour();
+  stopTour(); r3d?.pause();
   document.body.dataset.view = 'plan';
   $('#view-ride').hidden = true; $('#view-plan').hidden = false;
   renderRoutes();
@@ -552,6 +560,24 @@ function renderRide() {
   renderChart();
   selected = -1;
   selectSample(worst, false);
+  setMode(mode);
+}
+
+/* ---------- מפה רגילה / תלת־ממד ---------- */
+async function setMode(next) {
+  if (next === '3d' && !supports3D()) { toast('הטלפון הזה לא תומך בתצוגת תלת־ממד.'); next = '2d'; }
+  stopTour();
+  mode = next; store.set('ruach-view-mode', mode);
+  document.body.dataset.mode = mode;
+  document.querySelectorAll('.mode-switch [data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+  $('#ride-map').hidden = mode === '3d'; $('#ride-map3d').hidden = mode !== '3d';
+  if (mode === '2d') { r3d?.pause(); requestAnimationFrame(() => { rideMap?.invalidateSize(); fitRoute(); }); return; }
+  r3d ??= new Ride3D($('#ride-map3d'), { colorOf, bandOf: band, onSelect: i => { stopTour(); selectSample(i, false); scrollToPoint(); } });
+  r3d.setAlternatives(options.filter((_, i) => i !== active).map(o => o.route));
+  $('#map-loading').hidden = false;
+  try { await r3d.open(ride(), places); r3d.select(selected, false); }
+  catch (e) { toast(e.message || 'תצוגת התלת־ממד לא נטענה.'); mode = '2d'; setMode('2d'); }
+  finally { $('#map-loading').hidden = true; }
 }
 
 function selectSample(index, pan) {
@@ -583,6 +609,7 @@ function selectSample(index, pan) {
   document.querySelectorAll('#sample-rows tr').forEach(tr => tr.classList.toggle('selected', +tr.dataset.row === selected));
   const cursor = $('#chart-cursor');
   if (cursor && chartX) { const x = chartX(s.distance); cursor.setAttribute('x1', x); cursor.setAttribute('x2', x); }
+  if (mode === '3d') r3d?.select(selected, pan);
   if (rideMap && rideLayers) {
     rideLayers.selected.clearLayers();
     L.circleMarker([s.lat, s.lon], { radius: 10, color: '#0f2a31', weight: 4, fillColor: '#ffffff', fillOpacity: 1 }).addTo(rideLayers.selected);
@@ -672,7 +699,7 @@ function renderChart() {
 /* ---------- נסיעה וירטואלית ---------- */
 function stopTour() {
   if (!tourTimer) return;
-  clearInterval(tourTimer); tourTimer = null;
+  if (tourTimer === 'fly') { tourTimer = null; r3d?.stopFly(false); } else { clearInterval(tourTimer); tourTimer = null; }
   $('#play-tour').setAttribute('aria-pressed', 'false');
   $('#play-tour').innerHTML = `${icon('play')}<span>נסיעה וירטואלית</span>`;
 }
@@ -682,6 +709,11 @@ function startTour() {
   $('#play-tour').setAttribute('aria-pressed', 'true');
   $('#play-tour').innerHTML = `${icon('pause')}<span>עצירה</span>`;
   scrollToPoint();
+  if (mode === '3d' && r3d) {
+    tourTimer = 'fly';
+    r3d.fly({ startIndex: selected, onStep: i => selectSample(i, false), onEnd: stopTour });
+    return;
+  }
   if (rideMap) rideMap.setView([o.samples[selected].lat, o.samples[selected].lon], Math.max(rideMap.getZoom(), 11));
   tourTimer = setInterval(() => {
     if (!ride()?.ready || selected >= ride().samples.length - 1) { stopTour(); return; }
@@ -737,7 +769,8 @@ document.addEventListener('pointerdown', e => {
 
 $('#ride-back').onclick = () => { if (history.state?.ride) history.back(); else showPlan(); };
 window.addEventListener('popstate', () => { if (document.body.dataset.view === 'ride') showPlan(); });
-$('#fit-route').onclick = fitRoute;
+$('#fit-route').onclick = () => mode === '3d' ? r3d?.fit() : fitRoute();
+document.querySelectorAll('.mode-switch [data-mode]').forEach(b => b.onclick = () => { if (b.dataset.mode !== mode) setMode(b.dataset.mode); });
 $('#scrubber').addEventListener('input', e => { stopTour(); selectSample(+e.target.value, true); });
 $('#prev-point').onclick = () => { stopTour(); selectSample(selected - 1, true); };
 $('#next-point').onclick = () => { stopTour(); selectSample(selected + 1, true); };

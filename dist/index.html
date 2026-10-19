@@ -105,6 +105,9 @@
 <section id="view-ride" class="view" hidden aria-labelledby="ride-title">
   <div class="ride-map-wrap">
     <div id="ride-map" dir="ltr" aria-label="מפת המסלול עם חיצי רוח"></div>
+    <div id="ride-map3d" dir="ltr" hidden aria-label="תצוגת תלת־ממד של הדרך עם זרמי רוח"></div>
+    <div class="mode-switch" role="group" aria-label="סוג תצוגה"><button type="button" data-mode="2d" aria-pressed="true">מפה</button><button type="button" data-mode="3d" aria-pressed="false">תלת־ממד</button></div>
+    <div class="map-loading" id="map-loading" hidden><span class="spinner"></span>טוען תלת־ממד…</div>
     <div class="map-top">
       <button type="button" class="round-button raised" id="ride-back" aria-label="חזרה לבחירת דרך"><svg><use href="#i-back"/></svg></button>
       <div class="map-title"><b id="ride-title"></b><span id="ride-subtitle"></span></div>

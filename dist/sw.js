@@ -1,7 +1,7 @@
 // Cache only our static application shell. Never cache route/weather responses,
 // map tiles, login redirects or authenticated documents outside this app shell.
-const CACHE='ruach-shell-v5';
-const SHELL=['./','./index.html','./app.css','./app.mjs','./core.mjs','./view.mjs','./navigation.mjs','./icon.svg','./icon-192.png','./icon-512.png','./manifest.webmanifest','./vendor/leaflet.js','./vendor/leaflet.css'];
+const CACHE='ruach-shell-v6';
+const SHELL=['./','./index.html','./app.css','./app.mjs','./core.mjs','./view.mjs','./navigation.mjs','./ride3d.mjs','./icon.svg','./icon-192.png','./icon-512.png','./manifest.webmanifest','./vendor/leaflet.js','./vendor/leaflet.css'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
   for(const asset of SHELL){

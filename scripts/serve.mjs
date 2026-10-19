@@ -14,4 +14,9 @@ const server=http.createServer(async(req,res)=>{
   res.writeHead(200,{'Content-Type':types[path.extname(target)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(await readFile(target));
  }catch{res.writeHead(404);res.end('Not found');}
 });
-server.listen(4173,'127.0.0.1',()=>console.log('Local: http://127.0.0.1:4173'));
+// PHONE=1 opens the server to the home network so a phone on the same Wi-Fi can try the app.
+const host=process.env.PHONE?'0.0.0.0':'127.0.0.1';
+server.listen(4173,host,async()=>{
+ console.log('Local: http://127.0.0.1:4173');
+ if(process.env.PHONE){const {networkInterfaces}=await import('node:os');for(const list of Object.values(networkInterfaces()))for(const a of list||[])if(a.family==='IPv4'&&!a.internal)console.log(`Phone (same Wi-Fi): http://${a.address}:4173`);}
+});
