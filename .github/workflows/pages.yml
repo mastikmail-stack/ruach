@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --test tests/core.test.mjs tests/view.test.mjs tests/navigation.test.mjs tests/conditions.test.mjs
+      - run: node --test "tests/*.test.mjs"
 
   deploy:
     needs: test

@@ -222,7 +222,9 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 .rc-stats b { display: block; font-size: 22px; font-weight: 800; }
 .rc-stats em { font-size: 10px; font-weight: 400; font-style: normal; color: var(--ink-3); white-space: nowrap; }
 .rc-stats .cross-value { color: var(--c); }
-.rc-hotspots { display: grid; gap: 5px; font-size: 12px; color: var(--ink-2); }
+.rc-line { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 14px; color: var(--ink-2); }
+.rc-line b { color: var(--ink); }
+.rc-line .cross-value { color: var(--c); }
 .route-help { margin-top: 12px; font-size: 13px; color: var(--ink-2); }
 .route-help summary { cursor: pointer; font-weight: 700; padding-block: 6px; }
 .route-help p { margin-top: 4px; }
@@ -278,10 +280,61 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 
 /* ---------- מסך רכיבה ---------- */
 #view-ride { background: var(--bg); }
-.ride-map-wrap { position: sticky; top: 0; height: 40dvh; min-height: 250px; z-index: 600; border-radius: 0 0 24px 24px; overflow: hidden; box-shadow: 0 8px 24px rgb(15 42 49 / .18); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* הבמה: האופנוע בתלת־ממד במרכז המסך */
+.hero {
+  position: relative; height: min(62dvh, 600px); min-height: 380px; overflow: hidden;
+  background: linear-gradient(#8ec5e4, #eef5ee);
+  border-radius: 0 0 28px 28px; box-shadow: 0 10px 30px rgb(15 42 49 / .18);
+}
+@media (prefers-color-scheme: dark) { .hero { background: linear-gradient(#0f2430, #35505a); } }
+.bike-stage { position: absolute; inset: 0; }
+.bike-stage canvas { width: 100% !important; height: 100% !important; display: block; cursor: grab; }
+.bike-stage canvas:active { cursor: grabbing; }
+.hero-top { position: absolute; z-index: 3; top: calc(10px + var(--safe-top)); inset-inline: 10px; display: flex; align-items: center; gap: 8px; }
+.hero-title {
+  flex: 1; min-width: 0; padding: 6px 14px; min-height: 44px; border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; flex-direction: column; justify-content: center; box-shadow: var(--shadow);
+}
+.hero-title b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.hero-title span { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.bike-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: 99px;
+  background: var(--brand); color: var(--brand-ink); font-weight: 700; font-size: 14px; box-shadow: var(--shadow); white-space: nowrap;
+}
+.bike-chip svg { font-size: 20px; }
+.hero-hud {
+  position: absolute; z-index: 2; top: calc(66px + var(--safe-top)); inset-inline-start: 12px;
+  display: grid; justify-items: start; gap: 6px; pointer-events: none;
+}
+.hero-hud .relation-chip { margin: 0; font-size: 15px; padding: 6px 14px; background: color-mix(in srgb, var(--c, var(--accent)) 88%, black); color: #fff; box-shadow: var(--shadow); }
+.hud-big { display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 12px; border-radius: 18px; background: color-mix(in srgb, var(--surface) 82%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: var(--shadow); }
+.hud-big b { font-size: 44px; font-weight: 800; line-height: 1; color: var(--c, var(--ink)); }
+.hud-big span { font-size: 12px; line-height: 1.25; color: var(--ink-2); }
+.hud-small { display: flex; gap: 10px; padding: 4px 12px; border-radius: 99px; font-size: 13px; color: var(--ink-2); background: color-mix(in srgb, var(--surface) 78%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.hud-small b { color: var(--ink); font-size: 15px; }
+.hero-where {
+  position: absolute; z-index: 2; bottom: 14px; inset-inline: 12px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  padding: 8px 14px; border-radius: 16px; font-size: 13px; color: var(--ink-2); pointer-events: none;
+  background: color-mix(in srgb, var(--surface) 80%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.hero-where b { font-size: 16px; color: var(--ink); }
+.hero-hint { position: absolute; z-index: 2; bottom: 66px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 99px; font-size: 12px; color: #fff; background: rgb(0 0 0 / .35); pointer-events: none; transition: opacity .6s; }
+.hero-hint.gone { opacity: 0; }
+.hero-loading { position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 99px; background: var(--surface); box-shadow: var(--shadow); font-weight: 600; font-size: 14px; }
+.hero-fallback { position: absolute; inset: 0; display: grid; place-items: center; }
+.hero-fallback .compass { width: min(62vw, 260px); height: auto; }
+.hero-controls { max-width: 640px; margin: 12px auto 0; padding: 0 var(--gutter); }
+.hero-controls .strip-ends { align-items: center; }
+.point-rain { text-align: center; margin-top: 6px; }
+
+.map-card { padding: 0; overflow: hidden; }
+.ride-map-wrap { position: relative; height: 340px; }
+.map-tools { position: absolute; z-index: 700; top: 10px; inset-inline: 10px; display: flex; justify-content: space-between; align-items: center; }
 #ride-map, #ride-map3d { position: absolute; inset: 0; background: #dde5e0; }
 .mode-switch {
-  position: absolute; z-index: 700; top: calc(64px + var(--safe-top)); left: 10px;
   display: flex; padding: 3px; border-radius: 99px; background: var(--surface); box-shadow: var(--shadow);
 }
 .mode-switch button { min-height: 34px; padding: 0 14px; border-radius: 99px; font-size: 13.5px; font-weight: 700; color: var(--ink-2); }
@@ -495,12 +548,21 @@ dialog::backdrop { background: rgb(8 20 24 / .5); }
   background: #0f2a31; color: #fff; box-shadow: var(--shadow-lg); font-size: 15px; animation: rise .25s ease-out;
 }
 
+#bike-dialog::backdrop { background: rgb(8 20 24 / .12); }
+#bike-dialog .dialog-head { margin-bottom: 10px; }
+.bike-types { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bike-type { display: block; width: 100%; padding: 9px 12px; border-radius: 14px; background: var(--surface-2); text-align: start; border: 2px solid transparent; }
+.bike-type b { display: block; font-size: 15px; }
+.bike-type small { display: block; color: var(--ink-3); font-size: 12px; line-height: 1.3; }
+.bike-type .r-icon { display: none; }
+.bike-type[aria-pressed="true"] { border-color: var(--accent); background: var(--low-soft); }
+.bike-colors { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 6px; }
+.bike-colors button { width: 34px; height: 34px; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 2px rgb(0 0 0 / .12); }
+.bike-colors button[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offset: 3px; }
+
 /* מחשב: המפה בצד והפרטים לידה */
 @media (min-width: 980px) {
-  #view-ride:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr) 520px; }
-  .ride-map-wrap { height: 100dvh; position: sticky; top: 0; border-radius: 0; }
-  .sheet { margin: 0; border-radius: 0; max-width: none; box-shadow: none; padding-top: 20px; }
-  .sheet-grip { display: none; }
+  .hero { max-width: 1100px; margin-inline: auto; border-radius: 0 0 32px 32px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

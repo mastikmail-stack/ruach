@@ -16,9 +16,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap">
   <link rel="stylesheet" href="./vendor/leaflet.css">
-  <link rel="stylesheet" href="./app.css?v=8">
+  <link rel="stylesheet" href="./app.css?v=9">
+  <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
   <script src="./vendor/leaflet.js" defer></script>
-  <script type="module" src="./app.mjs?v=8"></script>
+  <script type="module" src="./app.mjs?v=9"></script>
 </head>
 <body data-view="plan">
 <svg class="icons" aria-hidden="true"><defs>
@@ -41,6 +42,7 @@
   <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
+  <symbol id="i-bike" viewBox="0 0 24 24"><circle cx="5.5" cy="16.5" r="3.5"/><circle cx="18.5" cy="16.5" r="3.5"/><path d="M5.5 16.5 10 10h5l3.5 6.5M9 7h3l3 3M14.5 10l-2.5 6.5H5.5"/></symbol>
   <symbol id="i-city" viewBox="0 0 24 24"><path d="M3 21h18M5 21V8l6-3v16m0-11h8v11M8 10v.5m0 3v.5m0 3v.5m7-4v.5m0 3v.5"/></symbol>
 </defs></svg>
 
@@ -70,8 +72,6 @@
         <button type="button" class="option-pill" id="open-departure"><svg><use href="#i-clock"/></svg><span><small>יציאה</small><b id="departure-label">עכשיו</b></span></button>
         <button type="button" class="option-pill" id="open-roads"><svg><use href="#i-road"/></svg><span><small>כבישים</small><b id="roads-label">כל הכבישים</b></span></button>
       </div>
-      <label class="urban-option"><input type="checkbox" id="urban-mode"><span><b>נסיעה עירונית</b><small>יותר נקודות בדיקה לאורך הרחובות</small></span><svg aria-hidden="true"><use href="#i-city"/></svg></label>
-      <p class="fine-print urban-note" id="urban-note" hidden>בדיקה כל כ־250 מ׳, עד 50 נקודות. זו תחזית אזורית: השפעת בניינים, פינות ומעברים בין מגדלים אינה מחושבת, גם בתלת־ממד.</p>
     </div>
 
     <div id="status" class="status" role="status" aria-live="polite" hidden></div>
@@ -113,39 +113,10 @@
 
 <!-- ===================== מסך רכיבה ===================== -->
 <section id="view-ride" class="view" hidden aria-labelledby="ride-title">
-  <div class="ride-map-wrap">
-    <div id="ride-map" dir="ltr" aria-label="מפת המסלול עם חיצי רוח"></div>
-    <div id="ride-map3d" dir="ltr" hidden aria-label="תצוגת תלת־ממד של הדרך עם זרמי רוח"></div>
-    <div class="mode-switch" role="group" aria-label="סוג תצוגה"><button type="button" data-mode="2d" aria-pressed="true">מפה</button><button type="button" data-mode="3d" aria-pressed="false">תלת־ממד</button></div>
-    <div class="map-loading" id="map-loading" hidden><span class="spinner"></span>טוען תלת־ממד…</div>
-    <div class="map-top">
-      <button type="button" class="round-button raised" id="ride-back" aria-label="חזרה לבחירת דרך"><svg><use href="#i-back"/></svg></button>
-      <div class="map-title"><b id="ride-title"></b><span id="ride-subtitle"></span></div>
-      <button type="button" class="round-button raised" id="fit-route" aria-label="הצגת כל המסלול"><svg><use href="#i-fit"/></svg></button>
-    </div>
-    <div class="map-legend" aria-hidden="true"><span><i class="low"></i>חלשה</span><span><i class="mid"></i>מורגשת</span><span><i class="high"></i>חזקה</span></div>
-  </div>
-
-  <div class="sheet" id="ride-sheet">
-    <div class="sheet-grip" aria-hidden="true"></div>
-    <div id="stale-banner" class="stale-banner" hidden><span>התחזית כבר לא עדכנית.</span><button type="button" id="refresh-forecast" class="mini-button"><svg><use href="#i-refresh"/></svg>לעדכן</button></div>
-
-    <div id="verdict" class="verdict"></div>
-    <div id="metrics" class="metrics"></div>
-    <div class="card weather-card"><h2>מזג האוויר בדרך</h2><p id="weather-summary"></p></div>
-    <p id="ride-urban-note" class="fine-print urban-note" hidden>מצב עירוני: התחזית האזורית אינה מחשבת את השפעת הבניינים על הרוח. התלת־ממד ממחיש את כיוון התחזית, ואינו מדמה זרימה סביב בניינים.</p>
-
-    <section class="card point-card" aria-labelledby="point-heading">
-      <div class="card-head"><h2 id="point-heading">הרוח לאורך הדרך</h2><span id="point-counter" class="muted"></span></div>
-      <div class="strip-wrap">
-        <div id="wind-strip" class="wind-strip" aria-hidden="true"></div>
-        <input type="range" id="scrubber" min="0" max="1" value="0" step="1" aria-label="נקודה לאורך המסלול">
-      </div>
-      <div class="strip-ends"><span id="strip-start"></span><span id="strip-end"></span></div>
-
-      <div class="point-body">
-        <div class="compass-wrap">
-          <svg class="compass" viewBox="0 0 200 200" role="img" aria-label="המחשת כיוון הרוח ביחס לאופנוע">
+  <div class="hero" id="hero">
+    <div id="bike-stage" class="bike-stage"></div>
+    <div class="hero-fallback" id="hero-fallback" hidden>
+      <svg class="compass" viewBox="0 0 200 200" role="img" aria-label="המחשת כיוון הרוח ביחס לאופנוע">
             <defs>
               <marker id="arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M1 1 8 5 1 9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></marker>
             </defs>
@@ -165,25 +136,54 @@
             </g>
             <text x="100" y="196" class="compass-label" text-anchor="middle">כיוון הנסיעה ↑</text>
           </svg>
-        </div>
-        <div class="point-info" aria-live="polite">
-          <b id="point-road" class="point-road"></b>
-          <span id="point-where" class="muted"></span>
-          <span id="point-relation" class="relation-chip"></span>
-          <span id="point-weather" class="muted"></span>
-        </div>
-        <div class="point-values">
-          <div><small>רוח</small><b id="point-wind"></b></div>
-          <div><small>משבים</small><b id="point-gust"></b></div>
-          <div class="accent"><small>משב צד</small><b id="point-cross"></b></div>
-        </div>
-      </div>
-      <p id="point-rain" class="fine-print"></p>
+    </div>
+    <div class="hero-top">
+      <button type="button" class="round-button raised" id="ride-back" aria-label="חזרה לבחירת דרך"><svg><use href="#i-back"/></svg></button>
+      <div class="hero-title"><b id="ride-title"></b><span id="ride-subtitle"></span></div>
+      <button type="button" class="bike-chip" id="pick-bike" aria-label="בחירת אופנוע"><svg><use href="#i-bike"/></svg><span id="bike-label">נייקד</span></button>
+    </div>
+    <div class="hero-hud" aria-live="polite">
+      <span id="point-relation" class="relation-chip"></span>
+      <div class="hud-big"><b id="point-cross"></b><span>קמ״ש<br>משב צד</span></div>
+      <div class="hud-small"><span>רוח <b id="point-wind"></b></span><span>משבים <b id="point-gust"></b></span></div>
+    </div>
+    <div class="hero-where"><b id="point-road"></b><span id="point-where"></span><span id="point-weather"></span></div>
+    <div class="hero-loading" id="hero-loading"><span class="spinner"></span>מכין את האופנוע…</div>
+    <span class="hero-hint" id="hero-hint">↔ גרור כדי לסובב</span>
+  </div>
 
-      <div class="player">
-        <button type="button" class="round-button" id="prev-point" aria-label="הנקודה הקודמת"><svg><use href="#i-back"/></svg></button>
-        <button type="button" class="play-button" id="play-tour" aria-pressed="false"><svg><use href="#i-play"/></svg><span>נסיעה וירטואלית</span></button>
-        <button type="button" class="round-button" id="next-point" aria-label="הנקודה הבאה"><svg><use href="#i-next"/></svg></button>
+  <section class="hero-controls" aria-labelledby="point-heading">
+    <h2 id="point-heading" class="visually-hidden">הרוח לאורך הדרך</h2>
+    <div class="strip-wrap">
+      <div id="wind-strip" class="wind-strip" aria-hidden="true"></div>
+      <input type="range" id="scrubber" min="0" max="1" value="0" step="1" aria-label="נקודה לאורך המסלול">
+    </div>
+    <div class="strip-ends"><span id="strip-start"></span><span id="point-counter" class="muted"></span><span id="strip-end"></span></div>
+    <div class="player">
+      <button type="button" class="round-button" id="prev-point" aria-label="הנקודה הקודמת"><svg><use href="#i-back"/></svg></button>
+      <button type="button" class="play-button" id="play-tour" aria-pressed="false"><svg><use href="#i-play"/></svg><span>נסיעה וירטואלית</span></button>
+      <button type="button" class="round-button" id="next-point" aria-label="הנקודה הבאה"><svg><use href="#i-next"/></svg></button>
+    </div>
+    <p id="point-rain" class="fine-print point-rain"></p>
+  </section>
+
+  <div class="sheet" id="ride-sheet">
+    <div id="stale-banner" class="stale-banner" hidden><span>התחזית כבר לא עדכנית.</span><button type="button" id="refresh-forecast" class="mini-button"><svg><use href="#i-refresh"/></svg>לעדכן</button></div>
+
+    <div id="verdict" class="verdict"></div>
+    <div id="metrics" class="metrics"></div>
+    <div class="card weather-card"><h2>מזג האוויר בדרך</h2><p id="weather-summary"></p></div>
+
+    <section class="card map-card" aria-label="מפת הדרך">
+      <div class="ride-map-wrap">
+        <div id="ride-map" dir="ltr" aria-label="מפת המסלול עם חיצי רוח"></div>
+        <div id="ride-map3d" dir="ltr" hidden aria-label="מפת תלת־ממד של הדרך עם זרמי רוח"></div>
+        <div class="map-loading" id="map-loading" hidden><span class="spinner"></span>טוען תלת־ממד…</div>
+        <div class="map-tools">
+          <div class="mode-switch" role="group" aria-label="סוג מפה"><button type="button" data-mode="2d" aria-pressed="true">מפה</button><button type="button" data-mode="3d" aria-pressed="false">שטח בתלת־ממד</button></div>
+          <button type="button" class="round-button raised small" id="fit-route" aria-label="הצגת כל המסלול"><svg><use href="#i-fit"/></svg></button>
+        </div>
+        <div class="map-legend" aria-hidden="true"><span><i class="low"></i>חלשה</span><span><i class="mid"></i>מורגשת</span><span><i class="high"></i>חזקה</span></div>
       </div>
     </section>
 
@@ -240,6 +240,13 @@
   <div class="pick-actions"><button type="button" class="primary-button" id="pick-confirm"><svg><use href="#i-pin"/></svg>בחירת הנקודה הזו</button></div>
 </dialog>
 
+<dialog id="bike-dialog" class="sheet-dialog" aria-labelledby="bike-heading">
+  <div class="dialog-head"><h2 id="bike-heading">על מה רוכבים?</h2><button type="button" class="round-button ghost" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div>
+  <div class="bike-types" id="bike-types"></div>
+  <div class="bike-colors" id="bike-colors" role="group" aria-label="צבע"></div>
+  <p class="fine-print">לכיף בלבד — סוג האופנוע משנה את ההמחשה, לא את התחזית.</p>
+</dialog>
+
 <dialog id="about-dialog" class="sheet-dialog tall" aria-labelledby="about-heading">
   <div class="dialog-head"><h2 id="about-heading">איך זה עובד?</h2><button type="button" class="round-button ghost" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div>
   <div class="about">
@@ -251,7 +258,7 @@
     <h3>חשוב לדעת</h3>
     <ul>
       <li>זו תחזית מודל בגובה 10 מטר, לא מדידה על הכביש. גשרים, מנהרות, עמקים ומשאיות לא מחושבים.</li>
-      <li>במצב עירוני נבדקות יותר נקודות לאורך הדרך, אך הרזולוציה של תחזית מזג האוויר אינה משתנה. בניינים עשויים להסיט, להסתיר או להגביר רוח; אין כאן חישוב מקומי של השפעתם, גם אם הם מוצגים במפת התלת־ממד.</li>
+      <li>בדרכים קצרות (למשל בעיר) נבדקות נקודות צפופות יותר, כדי לתפוס כל פנייה. הרזולוציה של תחזית מזג האוויר לא משתנה, והשפעת בניינים על הרוח לא מחושבת.</li>
       <li>השוואת הדרכים מבוססת על שיא משב הצד בנקודות שנבדקו. ייתכנו משבים שלא מופיעים בין הנקודות.</li>
       <li>משקעים (גשם, ולעיתים שלג) הם כמות במ״מ בשעה שבה מגיעים לנקודה. לא מחברים את הכמויות בין הנקודות. סיכוי לגשם הוא תחזית אזורית לכל נקודה, ואינו הסיכוי להירטב לאורך הנסיעה.</li>
       <li>כיוון המשבים לא מסופק בתחזית, ולכן משב הצד הוא אומדן לפי כיוון הרוח.</li>
