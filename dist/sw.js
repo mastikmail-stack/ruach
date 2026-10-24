@@ -1,6 +1,6 @@
 // Cache only our static application shell. Never cache route/weather responses,
 // map tiles, login redirects or authenticated documents outside this app shell.
-const CACHE='ruach-shell-v7';
+const CACHE='ruach-shell-v8';
 const SHELL=['./','./index.html','./app.css','./app.mjs','./core.mjs','./conditions.mjs','./view.mjs','./navigation.mjs','./ride3d.mjs','./icon.svg','./icon-192.png','./icon-512.png','./manifest.webmanifest','./vendor/leaflet.js','./vendor/leaflet.css'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
@@ -17,6 +17,8 @@ self.addEventListener('fetch',event=>{
   const shellPaths=SHELL.map(s=>s.replace(/^\.\//,''));
   if(!shellPaths.includes(relative))return;
   event.respondWith((async()=>{
-    try{return await fetch(event.request);}catch{return await caches.match(event.request,{ignoreSearch:true})||new Response('נדרש חיבור לאינטרנט',{status:503,headers:{'Content-Type':'text/plain;charset=utf-8'}});}
+    // Revalidate even when the browser HTTP cache still considers a file fresh.
+    // GitHub Pages may otherwise mix new HTML with an older application module.
+    try{return await fetch(event.request,{cache:'no-cache'});}catch{return await caches.match(event.request,{ignoreSearch:true})||new Response('נדרש חיבור לאינטרנט',{status:503,headers:{'Content-Type':'text/plain;charset=utf-8'}});}
   })());
 });

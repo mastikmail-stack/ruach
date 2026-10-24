@@ -1,8 +1,8 @@
-import { ZONE, localParts, addDays, departureEpoch, validateDeparture, parseRoads, chooseRoute, sampleRoute, roadRefs, weatherAt, band, directionName } from './core.mjs';
+import { ZONE, localParts, addDays, departureEpoch, validateDeparture, parseRoads, chooseRoute, sampleRoute, roadRefs, weatherAt, band, directionName } from './core.mjs?v=8';
 import { windRelation } from './view.mjs';
 import { navigationLinks, forecastPlan } from './navigation.mjs';
 import { Ride3D, supports3D } from './ride3d.mjs';
-import { conditionsAt, conditionName, summarizeConditions, compareWind } from './conditions.mjs';
+import { conditionsAt, conditionName, summarizeConditions, compareWind } from './conditions.mjs?v=8';
 
 /* ---------- עזרים ---------- */
 const $ = q => document.querySelector(q);
