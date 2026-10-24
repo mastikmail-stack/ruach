@@ -70,14 +70,24 @@
         <button type="button" class="option-pill" id="open-departure"><svg><use href="#i-clock"/></svg><span><small>יציאה</small><b id="departure-label">עכשיו</b></span></button>
         <button type="button" class="option-pill" id="open-roads"><svg><use href="#i-road"/></svg><span><small>כבישים</small><b id="roads-label">כל הכבישים</b></span></button>
       </div>
+      <label class="urban-option"><input type="checkbox" id="urban-mode"><span><b>נסיעה עירונית</b><small>יותר נקודות בדיקה לאורך הרחובות</small></span><svg aria-hidden="true"><use href="#i-city"/></svg></label>
+      <p class="fine-print urban-note" id="urban-note" hidden>בדיקה כל כ־250 מ׳, עד 50 נקודות. זו תחזית אזורית: השפעת בניינים, פינות ומעברים בין מגדלים אינה מחושבת, גם בתלת־ממד.</p>
     </div>
 
     <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 
     <section id="routes" class="routes" hidden aria-labelledby="routes-title">
-      <div class="section-head"><h2 id="routes-title">בחר דרך</h2><span id="routes-meta"></span></div>
+      <div class="section-head"><h2 id="routes-title">בחר דרך</h2><button type="button" id="refresh-routes" class="chip" hidden><svg aria-hidden="true"><use href="#i-refresh"/></svg>בדיקה מחדש</button></div>
+      <p id="routes-meta" class="fine-print" role="status" aria-live="polite"></p>
+      <p id="routes-insight" class="routes-insight" hidden></p>
       <div id="route-cards" class="route-cards"></div>
-      <p class="fine-print">זמני נסיעה משוערים ללא פקקים. הצבע מראה את משב הצד לאורך כל דרך.</p>
+      <p class="fine-print">הצבע מציג משב צד משוער בנקודות שנבדקו, מהמוצא מימין ליעד משמאל. זמני הנסיעה ללא פקקים. הגשם הוא כמות לשעת ההגעה; האחוז הוא הסיכוי הגבוה בנקודה שנבדקה, לא לכל הנסיעה.</p>
+      <details class="route-help"><summary>למה לא תמיד מופיעות כל הדרכים?</summary><p>שירות המסלולים מחפש עד שלוש חלופות ואינו מבטיח למצוא את כולן. מוצא ויעד מדויקים, נקודות מעבר וכבישים שבחרת יכולים לשנות את התוצאות. בחירת מספר כביש מסננת את הדרכים שכבר נמצאו; כדי לבדוק דרך שלא הוצעה, הוסף נקודת מעבר על אותה דרך.</p></details>
+      <div id="plan-navigation" class="card traffic-card" hidden>
+        <h3>בדיקת פקקים לפני הבחירה</h3>
+        <div class="nav-buttons"><a id="plan-google" class="nav-button" target="_blank" rel="noopener">Google Maps</a><a id="plan-waze" class="nav-button" target="_blank" rel="noopener">Waze</a></div>
+        <p id="plan-nav-note" class="fine-print"></p>
+      </div>
     </section>
 
     <section id="home-extras" class="home-extras">
@@ -122,6 +132,8 @@
 
     <div id="verdict" class="verdict"></div>
     <div id="metrics" class="metrics"></div>
+    <div class="card weather-card"><h2>מזג האוויר בדרך</h2><p id="weather-summary"></p></div>
+    <p id="ride-urban-note" class="fine-print urban-note" hidden>מצב עירוני: התחזית האזורית אינה מחשבת את השפעת הבניינים על הרוח. התלת־ממד ממחיש את כיוון התחזית, ואינו מדמה זרימה סביב בניינים.</p>
 
     <section class="card point-card" aria-labelledby="point-heading">
       <div class="card-head"><h2 id="point-heading">הרוח לאורך הדרך</h2><span id="point-counter" class="muted"></span></div>
@@ -158,6 +170,7 @@
           <b id="point-road" class="point-road"></b>
           <span id="point-where" class="muted"></span>
           <span id="point-relation" class="relation-chip"></span>
+          <span id="point-weather" class="muted"></span>
         </div>
         <div class="point-values">
           <div><small>רוח</small><b id="point-wind"></b></div>
@@ -165,6 +178,7 @@
           <div class="accent"><small>משב צד</small><b id="point-cross"></b></div>
         </div>
       </div>
+      <p id="point-rain" class="fine-print"></p>
 
       <div class="player">
         <button type="button" class="round-button" id="prev-point" aria-label="הנקודה הקודמת"><svg><use href="#i-back"/></svg></button>
@@ -189,7 +203,7 @@
 
     <details class="card details-card">
       <summary><span>כל הנקודות והנתונים</span><span id="sample-count" class="muted"></span></summary>
-      <div class="table-scroll"><table><thead><tr><th>קטע</th><th>הגעה</th><th>רוח</th><th>משב</th><th>משב צד</th></tr></thead><tbody id="sample-rows"></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>קטע</th><th>הגעה</th><th>רוח</th><th>משב</th><th>משב צד</th><th>משקעים<br>מ״מ בשעה</th></tr></thead><tbody id="sample-rows"></tbody></table></div>
     </details>
 
     <p id="forecast-note" class="fine-print footnote"></p>
@@ -237,9 +251,12 @@
     <h3>חשוב לדעת</h3>
     <ul>
       <li>זו תחזית מודל בגובה 10 מטר, לא מדידה על הכביש. גשרים, מנהרות, עמקים ומשאיות לא מחושבים.</li>
+      <li>במצב עירוני נבדקות יותר נקודות לאורך הדרך, אך הרזולוציה של תחזית מזג האוויר אינה משתנה. בניינים עשויים להסיט, להסתיר או להגביר רוח; אין כאן חישוב מקומי של השפעתם, גם אם הם מוצגים במפת התלת־ממד.</li>
+      <li>השוואת הדרכים מבוססת על שיא משב הצד בנקודות שנבדקו. ייתכנו משבים שלא מופיעים בין הנקודות.</li>
+      <li>משקעים (גשם, ולעיתים שלג) הם כמות במ״מ בשעה שבה מגיעים לנקודה. לא מחברים את הכמויות בין הנקודות. סיכוי לגשם הוא תחזית אזורית לכל נקודה, ואינו הסיכוי להירטב לאורך הנסיעה.</li>
       <li>כיוון המשבים לא מסופק בתחזית, ולכן משב הצד הוא אומדן לפי כיוון הרוח.</li>
       <li>זמני הנסיעה הם אומדן לרכב, בלי פקקים ועצירות. לפקקים — כפתורי Google Maps ו־Waze.</li>
-      <li>התחזית מתעדכנת: בדוק שוב לפני היציאה.</li>
+      <li>בכל חיפוש נשלחת בקשה חדשה לספק לתחזית רוח, גשם ומזג אוויר. אלה נתוני תחזית, לא מדידה חיה בכביש. בדוק שוב לפני היציאה.</li>
     </ul>
     <h3>להתקין בטלפון</h3>
     <p>באנדרואיד: פתח ב־Chrome ← תפריט ⋮ ← <b>"הוספה למסך הבית"</b> או <b>"התקנת אפליקציה"</b>. באייפון: ב־Safari ← שיתוף ← <b>"הוסף למסך הבית"</b>.</p>

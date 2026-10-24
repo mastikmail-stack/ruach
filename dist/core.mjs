@@ -58,7 +58,8 @@ export function chooseRoute(routes, requested) {
 
 // Step durations supply arrival estimates. Geometry distributes each step's time
 // by distance; this is a planning estimate without traffic, breaks or rider speed.
-export function sampleRoute(route) {
+export function sampleRoute(route, { spacingMeters = 5000 } = {}) {
+  if (!Number.isFinite(spacingMeters) || spacingMeters <= 0) throw new Error('מרווח דגימה לא תקין.');
   const edges = [];
   let distance = 0, duration = 0;
   for (const leg of route.legs) for (const step of leg.steps) {
@@ -74,7 +75,7 @@ export function sampleRoute(route) {
     }
   }
   if (!edges.length || distance < 100) throw new Error('המסלול קצר מדי לחישוב. יש לבחור נקודות שונות.');
-  const count = Math.min(50, Math.max(3, Math.ceil(distance / 5000) + 1));
+  const count = Math.min(50, Math.max(3, Math.ceil(distance / spacingMeters) + 1));
   const samples = [];
   let e = 0;
   for (let i = 0; i < count; i++) {

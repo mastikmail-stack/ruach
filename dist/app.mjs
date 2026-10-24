@@ -2,6 +2,7 @@ import { ZONE, localParts, addDays, departureEpoch, validateDeparture, parseRoad
 import { windRelation } from './view.mjs';
 import { navigationLinks, forecastPlan } from './navigation.mjs';
 import { Ride3D, supports3D } from './ride3d.mjs';
+import { conditionsAt, conditionName, summarizeConditions, compareWind } from './conditions.mjs';
 
 /* ---------- עזרים ---------- */
 const $ = q => document.querySelector(q);
@@ -9,6 +10,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const icon = name => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const round = n => Math.round(n);
 const km = m => (m / 1000).toLocaleString('he-IL', { maximumFractionDigits: 1 });
+const rainAmount = n => n === null ? 'לא זמין' : n > 0 && n < .1 ? 'פחות מ־0.1' : n.toLocaleString('he-IL', { maximumFractionDigits: 1 });
 const timeLabel = epoch => new Intl.DateTimeFormat('he-IL', { timeZone: ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(epoch));
 const weekday = date => new Intl.DateTimeFormat('he-IL', { timeZone: 'UTC', weekday: 'long' }).format(new Date(`${date}T12:00:00Z`));
 const shortDate = date => new Intl.DateTimeFormat('he-IL', { timeZone: 'UTC', day: 'numeric', month: 'numeric' }).format(new Date(`${date}T12:00:00Z`));
@@ -36,6 +38,7 @@ let remote = { q: '', list: null, loading: false, extended: false, error: false 
 let searchTimer, searchToken = 0;
 let departure = { mode: 'now' };
 let roadsText = '';
+let urban = false;
 let options = [];            // חלופות דרך: {route, samples, ready}
 let active = 0;
 let fetchedAt = 0;
@@ -328,6 +331,9 @@ async function calculate() {
   setStatus('');
   $('#routes').hidden = false;
   $('#routes-meta').textContent = 'מחפש דרכים…';
+  $('#routes-insight').hidden = true;
+  $('#refresh-routes').hidden = true;
+  $('#plan-navigation').hidden = true;
   $('#route-cards').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
   try {
     if (!navigator.onLine) throw new Error('אין חיבור לאינטרנט. התחבר ונסה שוב.');
@@ -353,7 +359,7 @@ async function calculate() {
       const err = new Error(`הדרכים שנמצאו לא עוברות בכביש ${missing.join(', ')}.`);
       err.roads = true; throw err;
     }
-    options = matching.sort((a, b) => a.duration - b.duration).slice(0, 3).map(route => ({ route, samples: sampleRoute(route), departure: dep, ready: false }));
+    options = matching.sort((a, b) => a.duration - b.duration).slice(0, 3).map(route => ({ route, samples: sampleRoute(route, { spacingMeters: urban ? 250 : 5000 }), departure: dep, urban, ready: false }));
     active = 0;
     $('#routes-meta').textContent = 'בודק את הרוח בכל דרך…';
     renderRoutes();
@@ -363,7 +369,7 @@ async function calculate() {
     for (let i = 0; i < plan.locations.length; i += 50) {
       const points = plan.locations.slice(i, i + 50);
       const url = new URL('https://api.open-meteo.com/v1/forecast');
-      url.search = new URLSearchParams({ latitude: points.map(s => s.lat.toFixed(4)).join(','), longitude: points.map(s => s.lon.toFixed(4)).join(','), hourly: 'wind_speed_10m,wind_direction_10m,wind_gusts_10m', wind_speed_unit: 'kmh', timeformat: 'unixtime', timezone: 'GMT', past_days: '1', forecast_days: '8' });
+      url.search = new URLSearchParams({ latitude: points.map(s => s.lat.toFixed(4)).join(','), longitude: points.map(s => s.lon.toFixed(4)).join(','), hourly: 'wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,precipitation_probability,temperature_2m,weather_code', wind_speed_unit: 'kmh', timeformat: 'unixtime', timezone: 'GMT', past_days: '1', forecast_days: '8' });
       let response;
       try { response = await fetchJSON(url, 40000); }
       catch (e) { throw new Error(`הדרכים נמצאו, אבל התחזית לא התקבלה. ${e.name === 'TimeoutError' ? 'נסה שוב בעוד רגע.' : e.message}`); }
@@ -374,9 +380,10 @@ async function calculate() {
     }
     options.forEach((o, oi) => o.samples.forEach((s, si) => {
       s.epoch = dep + s.seconds * 1000;
-      Object.assign(s, weatherAt(forecasts[plan.lookups[oi][si]].hourly, s.epoch, s.heading));
+      const hourly = forecasts[plan.lookups[oi][si]].hourly;
+      Object.assign(s, weatherAt(hourly, s.epoch, s.heading), conditionsAt(hourly, s.epoch));
     }));
-    options.forEach(o => { o.ready = true; o.maxCross = Math.max(...o.samples.map(s => s.crossGust)); o.maxGust = Math.max(...o.samples.map(s => s.gust)); });
+    options.forEach(o => { Object.assign(o, summarizeConditions(o.samples)); o.ready = true; });
     fetchedAt = Date.now();
     busy = false;
     renderRoutes();
@@ -400,27 +407,46 @@ async function calculate() {
 }
 
 function barcode(o) {
-  if (!o.ready) return '<div class="barcode loading"></div>';
+  if (!o.ready) return `<div class="barcode${busy ? ' loading' : ''}"></div>`;
   return `<div class="barcode" aria-hidden="true">${o.samples.map(s => `<i class="${band(s.crossGust)}" style="background:var(--c)"></i>`).join('')}</div>`;
 }
 function renderRoutes() {
   if (!options.length) return;
   const fastest = options[0].route.duration;
   const allReady = options.every(o => o.ready);
-  const calmest = allReady && options.length > 1 ? options.reduce((b, o, i) => o.maxCross < options[b].maxCross - 2 ? i : b, 0) : -1;
-  $('#routes-meta').textContent = allReady ? (options.length === 1 ? 'נמצאה דרך אחת' : `${options.length} דרכים`) : 'בודק את הרוח בכל דרך…';
+  const comparison = allReady ? compareWind(options) : null;
+  $('#routes-meta').textContent = allReady ? `${options.length === 1 ? 'נמצאה דרך אחת' : `${options.length} דרכים`} · עודכן ${timeLabel(fetchedAt)}` : busy ? 'בודק רוח ומזג אוויר בכל דרך…' : 'הדרכים נמצאו; התחזית לא זמינה כרגע';
+  $('#refresh-routes').hidden = !allReady;
+  $('#routes-insight').hidden = !allReady;
+  $('#routes-insight').textContent = options.length === 1
+    ? 'הספק החזיר דרך אחת לחיפוש הזה. אפשר להוסיף נקודת מעבר כדי לבדוק דרך נוספת.'
+    : comparison?.spread < 2 ? 'שיא משב הצד דומה בדרכים שנמצאו. כדאי להשוות גם את מיקומו לאורך הדרך.'
+    : `פער של ${comparison?.spread} קמ״ש בשיא משב הצד בין הדרכים. ההשוואה מבוססת על הנקודות שנבדקו.`;
+  $('#plan-navigation').hidden = !allReady;
+  if (allReady) configureNavigation('plan-google', 'plan-waze', 'plan-nav-note');
   $('#route-cards').innerHTML = options.map((o, i) => {
     const minutes = Math.ceil(o.route.duration / 60), delta = Math.round((o.route.duration - fastest) / 60);
     const arrival = timeLabel(o.departure + o.route.duration * 1000);
-    const tag = i === calmest ? '<span class="rc-tag best">הכי פחות רוח צד</span>' : i === 0 ? '<span class="rc-tag best">הכי מהירה</span>' : `<span class="rc-tag">${delta > 0 ? `+${delta} דק׳` : 'זמן דומה'}</span>`;
-    const wind = o.ready
-      ? `<span>משב צד עד <b style="color:var(--${band(o.maxCross)})">${round(o.maxCross)}</b> · משבים עד <b>${round(o.maxGust)}</b> קמ״ש</span>`
-      : '<span>בודק את הרוח…</span>';
+    const least = comparison?.spread >= 2 && comparison.least.includes(i);
+    const tags = `${i === 0 ? '<span class="rc-tag">הכי מהירה ללא פקקים</span>' : `<span class="rc-tag">${delta > 0 ? `+${delta} דק׳` : 'זמן דומה'}</span>`}${least ? '<span class="rc-tag best">שיא משב הצד הנמוך ביותר</span>' : ''}`;
+    let wind = `<p class="muted">${busy ? 'בודק רוח, משבים וגשם…' : 'התחזית חסרה. יש לנסות שוב לפני בחירת דרך.'}</p>`;
+    if (o.ready) {
+      const peak = o.samples[o.peak], quiet = o.samples[o.quiet];
+      const rel = windRelation(peak.direction, peak.heading, peak.speed);
+      wind = `<div class="rc-stats">
+        <span><small>רוח עד</small><b>${round(o.maxSpeed)} <em>קמ״ש</em></b><small>משבים עד ${round(o.maxGust)}</small></span>
+        <span class="${band(o.maxCross)}"><small>משב צד עד</small><b class="cross-value">${round(o.maxCross)} <em>קמ״ש</em></b><small>לפי כיוון הכביש</small></span>
+        <span><small>גשם עד</small><b>${rainAmount(o.maxRain)}${o.maxRain === null ? '' : ' <em>מ״מ בשעה</em>'}</b><small>${o.maxRainProbability === null ? 'סיכוי לא זמין' : `סיכוי נקודתי עד ${round(o.maxRainProbability)}%`}</small></span>
+      </div>
+      <div class="rc-hotspots"><span><i class="dot ${band(peak.crossGust)}"></i><b>יותר רוח צד:</b> ${esc(peak.road)} · ק״מ ${km(peak.distance)} · ${round(peak.crossGust)} קמ״ש</span>
+        <span><i class="dot ${band(quiet.crossGust)}"></i><b>פחות רוח צד:</b> ${esc(quiet.road)} · ק״מ ${km(quiet.distance)} · ${round(quiet.crossGust)} קמ״ש</span></div>
+      <div class="rc-wind"><span>בשיא הצד: ${esc(rel.visible ? rel.label : 'כמעט בלי רוח')} · מכיוון ${esc(directionName(peak.direction))}</span><span class="rc-go">למפה ${icon('next')}</span></div>`;
+    }
     return `<button type="button" class="route-card" data-route="${i}" ${o.ready ? '' : 'aria-disabled="true"'}>
-      <div class="rc-top"><span class="rc-name">${esc(routeName(o.route))}</span>${tag}</div>
+      <div class="rc-top"><span class="rc-name">${esc(routeName(o.route))}</span><span class="rc-tags">${tags}</span></div>
       <div class="rc-time"><strong>${minutes >= 90 ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}` : minutes}</strong><span>${minutes >= 90 ? 'שעות' : 'דק׳'} · ${km(o.route.distance)} ק״מ · הגעה ${arrival}</span></div>
       ${barcode(o)}
-      <div class="rc-wind">${wind}${o.ready ? `<span class="rc-go">לפרטים ${icon('next')}</span>` : ''}</div>
+      ${wind}
     </button>`;
   }).join('');
   $('#route-cards').querySelectorAll('[data-route]').forEach(b => b.onclick = () => { if (options[+b.dataset.route]?.ready) openRide(+b.dataset.route); });
@@ -428,19 +454,20 @@ function renderRoutes() {
 
 /* ---------- נסיעות אחרונות ---------- */
 function saveRecentTrip() {
-  const trip = { points: places.map(p => p.point), roads: roadsText };
-  const key = t => t.points.map(p => p.name).join('>') + '|' + t.roads;
+  const trip = { points: places.map(p => p.point), roads: roadsText, urban };
+  const key = t => t.points.map(p => p.name).join('>') + '|' + t.roads + '|' + !!t.urban;
   const list = store.get('ruach-recent-trips', []).filter(t => Array.isArray(t?.points) && t.points.every(validPoint) && key(t) !== key(trip));
   store.set('ruach-recent-trips', [trip, ...list].slice(0, 5));
 }
 function renderRecentTrips() {
   const list = store.get('ruach-recent-trips', []).filter(t => Array.isArray(t?.points) && t.points.length >= 2 && t.points.length <= 7 && t.points.every(validPoint));
   $('#recent-block').hidden = !list.length;
-  $('#recent-trips').innerHTML = list.map((t, i) => `<button type="button" class="recent-trip" data-trip="${i}"><span class="r-icon">${icon('history')}</span><span><b>${esc(t.points[0].name)} ← ${esc(t.points.at(-1).name)}</b><small>${t.points.length > 2 ? `דרך ${esc(t.points.slice(1, -1).map(p => p.name).join(', '))}` : t.roads ? `כבישים ${esc(t.roads)}` : 'הדרך המהירה ועוד חלופות'}</small></span><span class="go">${icon('next')}</span></button>`).join('');
+  $('#recent-trips').innerHTML = list.map((t, i) => `<button type="button" class="recent-trip" data-trip="${i}"><span class="r-icon">${icon('history')}</span><span><b>${esc(t.points[0].name)} ← ${esc(t.points.at(-1).name)}</b><small>${t.urban ? 'בדיקה עירונית · ' : ''}${t.points.length > 2 ? `דרך ${esc(t.points.slice(1, -1).map(p => p.name).join(', '))}` : t.roads ? `כבישים ${esc(t.roads)}` : 'הדרך המהירה ועוד חלופות'}</small></span><span class="go">${icon('next')}</span></button>`).join('');
   $('#recent-trips').querySelectorAll('[data-trip]').forEach(b => b.onclick = () => {
     const t = list[+b.dataset.trip];
     places = t.points.map((p, i) => makePlace(i === 0 ? 'start' : i === t.points.length - 1 ? 'end' : `stop-${++seq}`, p));
     roadsText = typeof t.roads === 'string' ? t.roads : '';
+    urban = !!t.urban; $('#urban-mode').checked = urban; $('#urban-note').hidden = !urban;
     $('#roads-label').textContent = roadsLabel(); $('#open-roads').classList.toggle('active', !!roadsText);
     editing = null; renderTrip(); renderPanel(); calculate();
   });
@@ -492,6 +519,16 @@ async function confirmPick() {
 /* ===================== מסך רכיבה ===================== */
 const ride = () => options[active];
 
+function configureNavigation(googleId, wazeId, noteId) {
+  const links = navigationLinks(places.map(p => p.point));
+  const google = $(`#${googleId}`), waze = $(`#${wazeId}`);
+  for (const [el, href] of [[google, links?.google], [waze, links?.waze]]) {
+    if (href) { el.href = href; el.removeAttribute('aria-disabled'); }
+    else { el.removeAttribute('href'); el.setAttribute('aria-disabled', 'true'); }
+  }
+  $(`#${noteId}`).textContent = `פקקים חיים נבדקים באפליקציית הניווט. Google Maps יקבל את המוצא, היעד ונקודות המעבר; Waze ינווט ליעד מהמיקום הנוכחי. הם עשויים לבחור דרך אחרת — התחזית כאן מתייחסת לדרך שבחרת כאן.${links?.tooManyStops ? ' עם יותר משלוש נקודות מעבר, הקישור ל־Google Maps לא זמין בטלפון.' : ''}`;
+}
+
 function openRide(index) {
   active = index;
   if (document.body.dataset.view !== 'ride') history.pushState({ ride: true }, '');
@@ -518,13 +555,11 @@ function renderRide() {
   $('#stale-banner').hidden = Date.now() - fetchedAt < STALE_MS;
 
   // שורת השורה התחתונה
-  const maxCross = o.maxCross, maxGust = o.maxGust, maxSpeed = Math.max(...samples.map(s => s.speed));
-  const worst = samples.reduce((b, s, i) => s.crossGust > samples[b].crossGust ? i : b, 0);
+  const { maxCross, maxGust, maxSpeed } = o;
+  const worst = o.peak;
   const w = samples[worst], level = band(maxCross);
-  const share = t => samples.filter(s => s.crossGust >= t).length / samples.length;
-  const part = f => f >= .5 ? 'ברוב הדרך' : f >= .15 ? 'בחלק מהדרך' : 'בקטע קצר';
-  const title = level === 'low' ? 'רוח צד חלשה לאורך כל הדרך' : level === 'mid' ? `רוח צד מורגשת ${part(share(20))}` : `משבי צד חזקים ${part(share(35))}`;
-  const sub = level === 'low' ? `משב הצד המשוער נשאר מתחת ל־20 קמ״ש. השיא: כ־${round(maxCross)} קמ״ש.` : `השיא: כ־${round(maxCross)} קמ״ש ב${esc(w.road)}, בסביבות ${timeLabel(w.epoch)} (ק״מ ${km(w.distance)}).`;
+  const title = level === 'low' ? 'רוח צד חלשה בנקודות שנבדקו' : level === 'mid' ? 'רוח צד מורגשת בחלק מהנקודות' : 'משבי צד חזקים בחלק מהנקודות';
+  const sub = `השיא המשוער: כ־${round(maxCross)} קמ״ש · ${esc(w.road)}, בסביבות ${timeLabel(w.epoch)} (ק״מ ${km(w.distance)}).`;
   const avgHead = samples.reduce((a, s) => a + s.head, 0) / samples.length;
   const tags = [`יציאה ${timeLabel(o.departure)} · הגעה ${timeLabel(samples.at(-1).epoch)}`];
   if (avgHead > 8) tags.push('בעיקר רוח פנים'); else if (avgHead < -8) tags.push('בעיקר רוח גב');
@@ -533,27 +568,26 @@ function renderRide() {
 
   $('#metrics').innerHTML = [['רוח עד', maxSpeed, ''], ['משבים עד', maxGust, ''], ['משב צד עד', maxCross, band(maxCross)]]
     .map(([label, v, cls]) => `<div class="metric ${cls}"><small>${label}</small><b>${round(v)}</b><span>קמ״ש</span></div>`).join('');
+  $('#ride-urban-note').hidden = !o.urban;
+  $('#weather-summary').textContent = o.maxRain === null ? 'חלק מנתוני הגשם חסרים — אין השוואת גשם מלאה למסלול.'
+    : `${o.maxRain === 0 ? 'לא צפויים משקעים בנקודות שנבדקו' : `משקעים עד ${rainAmount(o.maxRain)} מ״מ בשעה בנקודות שנבדקו`}${o.maxRainProbability === null ? ' · הסיכוי לגשם לא זמין.' : ` · סיכוי נקודתי עד ${round(o.maxRainProbability)}%.`}`;
 
   $('#wind-strip').innerHTML = samples.map(s => `<i class="${band(s.crossGust)}" style="flex:1"></i>`).join('');
   $('#scrubber').max = samples.length - 1;
   $('#strip-start').textContent = `${start} · ${timeLabel(samples[0].epoch)}`;
   $('#strip-end').textContent = `${timeLabel(samples.at(-1).epoch)} · ${end}`;
 
-  const links = navigationLinks(places.map(p => p.point));
-  const g = $('#nav-google');
-  if (links?.google) { g.href = links.google; g.removeAttribute('aria-disabled'); } else { g.removeAttribute('href'); g.setAttribute('aria-disabled', 'true'); }
-  if (links?.waze) $('#nav-waze').href = links.waze;
-  $('#nav-note').textContent = `Google Maps יקבל את המוצא, היעד ונקודות המעבר; Waze ינווט ליעד מהמיקום הנוכחי. אפליקציית הניווט עשויה לבחור דרך אחרת — הרוח כאן מחושבת לדרך שבמפה.${links?.tooManyStops ? ' עם יותר משלוש נקודות מעבר, הקישור ל־Google Maps לא זמין בטלפון.' : ''}`;
+  configureNavigation('nav-google', 'nav-waze', 'nav-note');
 
   $('#sample-count').textContent = `${samples.length} נקודות`;
   $('#sample-rows').innerHTML = samples.map((s, i) => {
     const side = s.cross < 1 ? (s.head >= 0 ? 'פנים' : 'גב') : s.signedCross > 0 ? 'מימין' : 'משמאל';
-    return `<tr data-row="${i}"><td><button type="button" class="row-button" data-sample="${i}">${esc(s.road)}</button><small>ק״מ ${km(s.distance)}</small></td><td>${timeLabel(s.epoch)}</td><td>${round(s.speed)}<small>מ${esc(directionName(s.direction))}</small></td><td>${round(s.gust)}</td><td><span class="pill ${band(s.crossGust)}">${round(s.crossGust)}</span><small>${side}</small></td></tr>`;
+    return `<tr data-row="${i}"><td><button type="button" class="row-button" data-sample="${i}">${esc(s.road)}</button><small>ק״מ ${km(s.distance)}</small></td><td>${timeLabel(s.epoch)}</td><td>${round(s.speed)}<small>מ${esc(directionName(s.direction))}</small></td><td>${round(s.gust)}</td><td><span class="pill ${band(s.crossGust)}">${round(s.crossGust)}</span><small>${side}</small></td><td>${rainAmount(s.precipitation)}<small>${s.rainProbability === null ? 'סיכוי חסר' : `${round(s.rainProbability)}%`}</small></td></tr>`;
   }).join('');
   $('#sample-rows').querySelectorAll('[data-sample]').forEach(b => b.onclick = () => { stopTour(); selectSample(+b.dataset.sample, true); scrollToPoint(); });
 
   const spacing = km(route.distance / (samples.length - 1));
-  $('#forecast-note').textContent = `נבדקה נקודה כל כ־${spacing} ק״מ, לפי שעת ההגעה המשוערת אליה. זו תחזית מודל בגובה 10 מ׳ — לא מדידה על הכביש — וזמני הנסיעה לא כוללים פקקים ועצירות. התחזית התקבלה ב־${timeLabel(fetchedAt)}; כדאי לבדוק שוב לפני היציאה.`;
+  $('#forecast-note').textContent = `נבדקה נקודה כל כ־${spacing} ק״מ, לפי שעת ההגעה המשוערת אליה (עד 50 נקודות לדרך). זו תחזית מודל בגובה 10 מ׳, לא מדידה על הכביש. יותר נקודות אינן משפרות את הרזולוציה של מודל מזג האוויר. הגשם מתייחס לשעה שבה מגיעים לנקודה; הסיכוי הוא נקודתי ואינו הסיכוי לכל הנסיעה. זמני הנסיעה לא כוללים פקקים ועצירות. הנתונים התקבלו ב־${timeLabel(fetchedAt)}; בכל חיפוש מתבקשת תחזית עדכנית מהספק.`;
 
   initRideMap();
   drawRideMap();
@@ -595,6 +629,8 @@ function selectSample(index, pan) {
   $('#point-wind').textContent = round(s.speed);
   $('#point-gust').textContent = round(s.gust);
   $('#point-cross').textContent = round(s.crossGust);
+  $('#point-weather').textContent = `${conditionName(s.weatherCode)}${s.temperature === null ? '' : ` · ${round(s.temperature)}°`}`;
+  $('#point-rain').textContent = `משקעים: ${rainAmount(s.precipitation)}${s.precipitation === null ? '' : ' מ״מ בשעת ההגעה'} · ${s.rainProbability === null ? 'סיכוי לא זמין' : `סיכוי ${round(s.rainProbability)}%`}`;
   // סיבוב בדרך הקצרה ביותר, כדי שהחצים לא יסתובבו סיבוב שלם
   const diff = ((rel.relative - compassAngle) % 360 + 540) % 360 - 180;
   compassAngle += diff;
@@ -738,8 +774,14 @@ function maybeOfferInstall() {
 
 /* ===================== חיבור אירועים ===================== */
 $('#add-stop').onclick = addStop;
+$('#refresh-routes').onclick = calculate;
+$('#urban-mode').onchange = e => {
+  urban = e.target.checked; $('#urban-note').hidden = !urban;
+  invalidate(); if (ready()) calculate();
+};
 $('#new-trip').onclick = () => {
   invalidate(); places = [makePlace('start'), makePlace('end')]; roadsText = ''; knownRoads = [];
+  urban = false; $('#urban-mode').checked = false; $('#urban-note').hidden = true;
   $('#roads-label').textContent = roadsLabel(); $('#open-roads').classList.remove('active');
   renderTrip(); renderRecentTrips(); startEditing('start');
 };

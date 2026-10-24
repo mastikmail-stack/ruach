@@ -187,6 +187,13 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 .option-pill small { display: block; color: var(--ink-3); font-size: 12px; line-height: 1.2; }
 .option-pill b { display: block; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .option-pill.active { outline: 2px solid var(--accent); }
+.urban-option { display: flex; align-items: center; gap: 12px; padding: 12px 4px; cursor: pointer; }
+.urban-option input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+.urban-option span { flex: 1; }
+.urban-option b { display: block; font-size: 14px; }
+.urban-option small { display: block; font-size: 12px; color: var(--ink-3); }
+.urban-option svg { color: var(--ink-3); }
+.urban-note { padding: 10px 12px; border-radius: 12px; background: var(--mid-soft); }
 
 .status { margin-top: 14px; padding: 14px 16px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); font-size: 15px; }
 .status.error { background: var(--high-soft); color: var(--ink); box-shadow: none; }
@@ -205,6 +212,22 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 }
 .route-card:active { transform: scale(.985); }
 .route-card .rc-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.route-card .rc-top { flex-wrap: wrap; }
+.rc-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.routes-insight { margin: 10px 0; padding: 10px 12px; background: var(--low-soft); border-radius: 12px; font-size: 14px; }
+#routes-meta { margin-bottom: 10px; }
+.rc-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.rc-stats > span { background: var(--surface-2); padding: 8px; border-radius: 12px; }
+.rc-stats small { display: block; font-size: 11px; color: var(--ink-3); line-height: 1.5; }
+.rc-stats b { display: block; font-size: 22px; font-weight: 800; }
+.rc-stats em { font-size: 10px; font-weight: 400; font-style: normal; color: var(--ink-3); white-space: nowrap; }
+.rc-stats .cross-value { color: var(--c); }
+.rc-hotspots { display: grid; gap: 5px; font-size: 12px; color: var(--ink-2); }
+.route-help { margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+.route-help summary { cursor: pointer; font-weight: 700; padding-block: 6px; }
+.route-help p { margin-top: 4px; }
+.traffic-card h3 { font-size: 16px; margin-bottom: 12px; }
+.weather-card p { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
 .route-card .rc-name { font-weight: 700; font-size: 16px; }
 .route-card .rc-tag { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
 .route-card .rc-tag.best { background: var(--low-soft); color: var(--accent); }
