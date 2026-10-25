@@ -1,6 +1,6 @@
 // מסך הרכיבה: מפת תלת־ממד עם תבליט שטח, זרמי רוח לאורך הדרך, ואופנוע תלת־ממד שנוסע על הכביש עצמו.
 // MapLibre נטען רק כשפותחים את התצוגה; האופנוע מצויר בשכבה מותאמת (custom layer) של Three.js.
-import { loadThree, buildBike, WindRig, animateBike } from './bike3d.mjs?v=16';
+import { loadThree, buildBike, WindRig, animateBike } from './bike3d.mjs?v=17';
 
 const VERSION = '4.7.1';
 const SCRIPT = `https://cdn.jsdelivr.net/npm/maplibre-gl@${VERSION}/dist/maplibre-gl.js`;
@@ -139,9 +139,9 @@ class BikeLayer {
     const limit = (n, size) => Math.round(Math.min(size * .3, Math.max(0, n)));
     const padding = { left: limit(-2 * dx, w), right: limit(2 * dx, w), top: limit(-2 * dy, h), bottom: limit(2 * dy, h) };
     const current = this.map.getPadding();
-    if (!this.composing && Object.keys(padding).some(k => Math.abs(padding[k] - current[k]) > 1)) {
+    if (!this.composing && !this.map.isEasing() && Object.keys(padding).some(k => Math.abs(padding[k] - current[k]) > 1)) {
       this.composing = true;
-      requestAnimationFrame(() => { this.composing = false; if (this.owner.running) this.map.setPadding(padding); });
+      requestAnimationFrame(() => { this.composing = false; if (this.owner.running && !this.map.isEasing()) this.map.setPadding(padding); });
     }
   }
   render(gl, matrix) {
