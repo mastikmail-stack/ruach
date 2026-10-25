@@ -215,6 +215,14 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 .route-card .rc-top { flex-wrap: wrap; }
 .rc-tags { display: flex; gap: 6px; flex-wrap: wrap; }
 .routes-insight { margin: 10px 0; padding: 10px 12px; background: var(--low-soft); border-radius: 12px; font-size: 14px; }
+.explain-button { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 13px; font-weight: 700; min-height: 36px; text-align: start; }
+.metric-note { margin-top: 6px; font-size: 12px; color: var(--ink-2); }
+.weather-explanations { display: grid; gap: 14px; margin-bottom: 16px; }
+.weather-explanations > div { padding-inline-start: 12px; border-inline-start: 3px solid var(--line); }
+.weather-explanations b { font-size: 15px; }
+.weather-explanations p { font-size: 14px; color: var(--ink-2); margin-top: 3px; }
+.chart-key { flex-shrink: 0; }
+#chart-heading { font-size: 15px; }
 #routes-meta { margin-bottom: 10px; }
 .rc-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .rc-stats > span { background: var(--surface-2); padding: 8px; border-radius: 12px; }
@@ -222,7 +230,7 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 .rc-stats b { display: block; font-size: 22px; font-weight: 800; }
 .rc-stats em { font-size: 10px; font-weight: 400; font-style: normal; color: var(--ink-3); white-space: nowrap; }
 .rc-stats .cross-value { color: var(--c); }
-.rc-line { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 14px; color: var(--ink-2); }
+.rc-line { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; color: var(--ink-2); }
 .rc-line b { color: var(--ink); }
 .rc-line .cross-value { color: var(--c); }
 .route-help { margin-top: 12px; font-size: 13px; color: var(--ink-2); }

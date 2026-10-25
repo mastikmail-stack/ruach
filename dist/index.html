@@ -16,10 +16,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap">
   <link rel="stylesheet" href="./vendor/leaflet.css">
-  <link rel="stylesheet" href="./app.css?v=11">
+  <link rel="stylesheet" href="./app.css?v=16">
   <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
   <script src="./vendor/leaflet.js" defer></script>
-  <script type="module" src="./app.mjs?v=11"></script>
+  <script type="module" src="./app.mjs?v=16"></script>
 </head>
 <body data-view="plan">
 <svg class="icons" aria-hidden="true"><defs>
@@ -79,10 +79,11 @@
     <section id="routes" class="routes" hidden aria-labelledby="routes-title">
       <div class="section-head"><h2 id="routes-title">בחר דרך</h2><button type="button" id="refresh-routes" class="chip" hidden><svg aria-hidden="true"><use href="#i-refresh"/></svg>בדיקה מחדש</button></div>
       <p id="routes-meta" class="fine-print" role="status" aria-live="polite"></p>
+      <button type="button" class="explain-button" data-weather-help><svg aria-hidden="true"><use href="#i-info"/></svg>מה הרוח והגשם אומרים לי?</button>
       <p id="routes-insight" class="routes-insight" hidden></p>
       <div id="route-cards" class="route-cards"></div>
-      <p class="fine-print">הצבע מציג משב צד משוער בנקודות שנבדקו, מהמוצא מימין ליעד משמאל. זמני הנסיעה ללא פקקים. הגשם הוא כמות לשעת ההגעה; האחוז הוא הסיכוי הגבוה בנקודה שנבדקה, לא לכל הנסיעה.</p>
-      <details class="route-help"><summary>למה לא תמיד מופיעות כל הדרכים?</summary><p>שירות המסלולים מחפש עד שלוש חלופות ואינו מבטיח למצוא את כולן. מוצא ויעד מדויקים, נקודות מעבר וכבישים שבחרת יכולים לשנות את התוצאות. בחירת מספר כביש מסננת את הדרכים שכבר נמצאו; כדי לבדוק דרך שלא הוצעה, הוסף נקודת מעבר על אותה דרך.</p></details>
+      <p class="fine-print">הרוח מהצד מתארת את הפרץ החזק ביותר הצפוי לרוחב הכביש, בנקודות שנבדקו. הפס הצבעוני מציג היכן היא מתחזקת, מהמוצא מימין ליעד משמאל. זמני הנסיעה ללא פקקים.</p>
+      <details class="route-help"><summary>איך מחפשים עוד דרכים?</summary><p>מחפשים עד שלוש דרכים שונות. אם נמצאה רק דרך אחת, נבדקות גם דרכים דרך אזורים סמוכים. כפילויות, פניית פרסה ומעקפים גדולים מסוננים. אין הבטחה שתמיד תימצא חלופה נוספת; אפשר להוסיף נקודת מעבר בכביש הרצוי. כבישים שבחרת מסננים את כל התוצאות. בבחירת חלופה שנמצאה כך, Google Maps יקבל גם נקודת מעבר שתכוון אליו.</p></details>
       <div id="plan-navigation" class="card traffic-card" hidden>
         <h3>בדיקת פקקים לפני הבחירה</h3>
         <div class="nav-buttons"><a id="plan-google" class="nav-button" target="_blank" rel="noopener">Google Maps</a><a id="plan-waze" class="nav-button" target="_blank" rel="noopener">Waze</a></div>
@@ -146,12 +147,12 @@
     <button type="button" class="round-button raised hero-fit" id="fit-route" aria-label="מבט על כל הדרך" aria-pressed="false"><svg><use href="#i-fit"/></svg></button>
     <div class="hero-hud" aria-live="polite">
       <span id="point-relation" class="relation-chip"></span>
-      <div class="hud-big"><b id="point-cross"></b><span>קמ״ש<br>משב צד</span></div>
-      <div class="hud-small"><span>רוח <b id="point-wind"></b></span><span>משבים <b id="point-gust"></b></span></div>
+      <div class="hud-big"><b id="point-cross"></b><span>קמ״ש מהצד<br>בפרץ החזק</span></div>
+      <div class="hud-small"><span>רוח רגילה <b id="point-wind"></b></span><span>פרץ חזק <b id="point-gust"></b></span></div>
     </div>
     <div class="hero-where"><b id="point-road"></b><span id="point-where"></span><span id="point-weather"></span></div>
     <div class="hero-loading" id="hero-loading"><span class="spinner"></span>מכין את המפה והאופנוע…</div>
-    <span class="hero-hint" id="hero-hint">שתי אצבעות: סיבוב והטיה</span>
+    <span class="hero-hint" id="hero-hint">שתי אצבעות: זום וסיבוב · האופנוע במרכז</span>
   </div>
 
   <section class="hero-controls" aria-labelledby="point-heading">
@@ -174,9 +175,10 @@
 
     <div id="verdict" class="verdict"></div>
     <div id="metrics" class="metrics"></div>
+    <p class="metric-note">הערכים הגבוהים ביותר בנקודות שנבדקו. <button type="button" class="explain-button" data-weather-help>הסבר פשוט למספרים</button></p>
     <div class="card weather-card"><h2>מזג האוויר בדרך</h2><p id="weather-summary"></p></div>
     <section class="card" aria-labelledby="chart-heading">
-      <div class="card-head"><h2 id="chart-heading">עוצמת הרוח לאורך הדרך</h2><span class="chart-key"><i class="k-wind"></i>רוח <i class="k-gust"></i>משבים</span></div>
+      <div class="card-head"><h2 id="chart-heading">איך הרוח משתנה בדרך</h2><span class="chart-key"><i class="k-wind"></i>רוח רגילה <i class="k-gust"></i>פרצי רוח</span></div>
       <div id="chart"></div>
     </section>
 
@@ -191,7 +193,7 @@
 
     <details class="card details-card">
       <summary><span>כל הנקודות והנתונים</span><span id="sample-count" class="muted"></span></summary>
-      <div class="table-scroll"><table><thead><tr><th>קטע</th><th>הגעה</th><th>רוח</th><th>משב</th><th>משב צד</th><th>משקעים<br>מ״מ בשעה</th></tr></thead><tbody id="sample-rows"></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>קטע</th><th>הגעה</th><th>רוח רגילה</th><th>פרץ רוח</th><th>פרץ מהצד</th><th>גשם<br>מ״מ בשעה</th></tr></thead><tbody id="sample-rows"></tbody></table></div>
     </details>
 
     <p id="forecast-note" class="fine-print footnote"></p>
@@ -235,14 +237,26 @@
   <p class="fine-print">לכיף בלבד — סוג האופנוע משנה את ההמחשה, לא את התחזית.</p>
 </dialog>
 
+<dialog id="weather-help" class="sheet-dialog" aria-labelledby="weather-help-heading">
+  <div class="dialog-head"><h2 id="weather-help-heading">מבינים את הרוח, בפשטות</h2><button type="button" class="round-button ghost" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div>
+  <div class="weather-explanations">
+    <div><b>רוח רגילה</b><p>מהירות הרוח שהתחזית צופה באזור. ככל שהמספר גדול יותר, הרוח חזקה יותר.</p></div>
+    <div><b>פרץ רוח חזק — מה שנקרא ״משב״</b><p>התחזקות קצרה של הרוח. למשל, הרוח יכולה להיות 15 קמ״ש, ולרגע להתחזק ל־30 קמ״ש.</p></div>
+    <div><b>רוח מהצד — מה דוחף הצידה?</b><p>החלק של הרוח שמגיע מימין או משמאל ביחס לכיוון הרכיבה. כאן מוצג הפרץ החזק ביותר המשוער מהצד. רוח ישר מולך או מאחוריך כמעט לא תורמת למספר הזה.</p></div>
+    <div><b>הצבע לאורך הדרך</b><p><span class="dot low"></span>חלשה: פחות מ־20 קמ״ש · <span class="dot mid"></span>מורגשת: 20 עד פחות מ־35 · <span class="dot high"></span>חזקה: 35 ומעלה. זה תיאור עוצמה, ולא קביעה אם בטוח לרכוב.</p></div>
+    <div><b>מה צפוי עם הגשם?</b><p>בכרטיס מופיע סיכום במילים. אחוזים, כשמופיעים, מתארים סיכוי לגשם בנקודה שנבדקה — לא לכל הנסיעה. בפירוט, מ״מ בשעה מתארים כמה גשם צפוי לרדת במשך אותה שעה.</p></div>
+  </div>
+  <p class="fine-print">כל הנתונים הם תחזית לפי שעת ההגעה לנקודות שנבדקו, ולא מדידה חיה בכביש. בכרטיס מוצג הערך הגבוה מבין הנקודות; השפעת בניינים מקומית אינה מחושבת.</p>
+</dialog>
+
 <dialog id="about-dialog" class="sheet-dialog tall" aria-labelledby="about-heading">
   <div class="dialog-head"><h2 id="about-heading">איך זה עובד?</h2><button type="button" class="round-button ghost" data-close aria-label="סגירה"><svg><use href="#i-close"/></svg></button></div>
   <div class="about">
     <p>האפליקציה מחשבת את הדרכים ליעד, דוגמת עד 50 נקודות לאורך כל דרך, ובודקת לכל נקודה את תחזית הרוח <b>לשעה שבה תגיע אליה</b>.</p>
-    <h3>מה זה "משב צד"?</h3>
-    <p>החלק של המשב שנושב לרוחב הכביש — זה מה שדוחף את האופנוע הצידה. רוח שמגיעה ישר מלפנים או מאחור כמעט לא תורמת לו.</p>
+    <h3>מה זו "רוח מהצד"?</h3>
+    <p>החלק של פרץ הרוח שנושב לרוחב הכביש — זה מה שדוחף את האופנוע הצידה. רוח שמגיעה ישר מלפנים או מאחור כמעט לא תורמת לו.</p>
     <h3>הצבעים</h3>
-    <p><span class="dot low"></span> עד 20 קמ״ש · <span class="dot mid"></span> 20–35 · <span class="dot high"></span> מעל 35. הצבעים מתארים עוצמה בלבד — הם לא קובעים אם בטוח לרכוב.</p>
+    <p><span class="dot low"></span> פחות מ־20 קמ״ש · <span class="dot mid"></span> 20 עד פחות מ־35 · <span class="dot high"></span> 35 ומעלה. הצבעים מתארים עוצמה בלבד — הם לא קובעים אם בטוח לרכוב.</p>
     <h3>חשוב לדעת</h3>
     <ul>
       <li>זו תחזית מודל בגובה 10 מטר, לא מדידה על הכביש. גשרים, מנהרות, עמקים ומשאיות לא מחושבים.</li>

@@ -1,6 +1,6 @@
 // מסך הרכיבה: מפת תלת־ממד עם תבליט שטח, זרמי רוח לאורך הדרך, ואופנוע תלת־ממד שנוסע על הכביש עצמו.
 // MapLibre נטען רק כשפותחים את התצוגה; האופנוע מצויר בשכבה מותאמת (custom layer) של Three.js.
-import { loadThree, buildBike, WindRig, animateBike } from './bike3d.mjs?v=11';
+import { loadThree, buildBike, WindRig, animateBike } from './bike3d.mjs?v=16';
 
 const VERSION = '4.7.1';
 const SCRIPT = `https://cdn.jsdelivr.net/npm/maplibre-gl@${VERSION}/dist/maplibre-gl.js`;
@@ -8,8 +8,8 @@ const STYLE_SHEET = `https://cdn.jsdelivr.net/npm/maplibre-gl@${VERSION}/dist/ma
 const RTL_PLUGIN = 'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.js';
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 const TERRAIN = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
-const CHASE = { pitch: 62, zoom: 15.6, side: 24 };  // מבט מאחורי הרוכב, מעט מהצד כדי לראות את צורת האופנוע
-const FLY_ZOOM = 14.6;                          // בזמן נסיעה וירטואלית — קצת יותר רחוק
+const CHASE = { pitch: 55, zoom: 14.4, side: 24 };  // יותר מהדרך מסביב, והאופנוע עדיין קריא
+const FLY_ZOOM = 14.1;
 
 const rad = d => d * Math.PI / 180;
 const deg = r => r * 180 / Math.PI;
@@ -46,6 +46,15 @@ function bearing(a, b) {
 }
 const turn = (from, to) => ((to - from) % 360 + 540) % 360 - 180;
 
+// MapLibre 4 returns an OFFSET from the current camera target, not an absolute
+// altitude (the API changed in v5). The camera needs the absolute ground height;
+// the custom model matrix below still needs the offset supplied by v4.
+export function groundElevation(map, position) {
+  const target = map.getCameraTargetElevation();
+  const offset = map.queryTerrainElevation(position);
+  return offset === null ? target : target + offset;
+}
+
 // חץ לבן (SDF) שאפשר לצבוע ולסובב על פני השטח
 function arrowImage() {
   const size = 64, c = document.createElement('canvas');
@@ -69,7 +78,7 @@ function flipSides(T, root) {
   });
 }
 
-// האופנוע נשמר בגודל קבוע על המסך (בערך 40% מרוחב המפה) בכל רמת זום, ועומד על פני השטח.
+// גודל מסך קריא גם כשמוציאים זום; המצלמה עוקבת אחרי מרכז הדגם, לא נקודת המגע של הגלגל.
 class BikeLayer {
   constructor(owner) {
     Object.assign(this, { id: 'bike', type: 'custom', renderingMode: '3d', owner });
@@ -107,8 +116,33 @@ class BikeLayer {
     this.lean.clear();
     this.build = buildBike(bike);
     flipSides(this.T, this.build.group);
+    this.modelCenter = new this.T.Box3().setFromObject(this.build.group).getCenter(new this.T.Vector3());
     this.lean.add(this.build.group);
+    this.owner.recenter();
     this.map?.triggerRepaint();
+  }
+  placement(zoom = this.map.getZoom()) {
+    const o = this.owner, canvas = this.map.getCanvas();
+    const px = o.overview ? 58 : Math.min(180, Math.max(82, Math.min(canvas.clientWidth, canvas.clientHeight) * .28));
+    const metersPerPixel = 40075016.686 * Math.cos(rad(o.pos[1])) / (512 * 2 ** zoom);
+    const size = Math.max(1, metersPerPixel * px / 2.3);
+    const mc = maplibregl.MercatorCoordinate.fromLngLat(o.pos, this.map.queryTerrainElevation?.(o.pos) || 0);
+    return { mc, scale: mc.meterInMercatorCoordinateUnits() * size };
+  }
+  compose() {
+    const canvas = this.map.getCanvas(), w = canvas.clientWidth, h = canvas.clientHeight;
+    const px = this.owner.overview ? 58 : Math.min(180, Math.max(82, Math.min(w, h) * .28));
+    const angle = rad(this.map.getBearing() - this.owner.heading), pitch = rad(this.map.getPitch());
+    const c = this.modelCenter, units = px / 2.3;
+    const dx = (c.x * Math.cos(angle) - c.z * Math.sin(angle)) * units;
+    const dy = -(c.y * Math.cos(pitch) - (c.z * Math.cos(angle) + c.x * Math.sin(angle)) * Math.sin(pitch)) * units;
+    const limit = (n, size) => Math.round(Math.min(size * .3, Math.max(0, n)));
+    const padding = { left: limit(-2 * dx, w), right: limit(2 * dx, w), top: limit(-2 * dy, h), bottom: limit(2 * dy, h) };
+    const current = this.map.getPadding();
+    if (!this.composing && Object.keys(padding).some(k => Math.abs(padding[k] - current[k]) > 1)) {
+      this.composing = true;
+      requestAnimationFrame(() => { this.composing = false; if (this.owner.running) this.map.setPadding(padding); });
+    }
   }
   render(gl, matrix) {
     const o = this.owner, map = this.map;
@@ -116,17 +150,13 @@ class BikeLayer {
     const now = performance.now(), dt = Math.min(.05, (now - this.last) / 1000); this.last = now;
     this.time += dt;
     const motion = o.reduced ? 0 : 1;
-    const elevation = map.queryTerrainElevation?.(o.pos) || 0;
-    const mc = maplibregl.MercatorCoordinate.fromLngLat(o.pos, elevation);
-    const canvas = map.getCanvas();
-    // בגודל קבוע על המסך; במבט על כל הדרך — קטן יותר, כמו סמן
-    const px = o.overview ? 64 : Math.min(260, Math.max(120, Math.min(canvas.clientWidth, canvas.clientHeight) * .42));
-    const metersPerPixel = 40075016.686 * Math.cos(rad(o.pos[1])) / (512 * 2 ** map.getZoom());
-    const size = Math.max(1, metersPerPixel * px / 2.3);
-    const s = mc.meterInMercatorCoordinateUnits() * size;
+    const { mc, scale: s } = this.placement();
     this.place.makeTranslation(mc.x, mc.y, mc.z).scale(this.scaleV.set(s, -s, s)).multiply(this.rotX);
     this.camera.projectionMatrix = this.proj.fromArray(matrix).multiply(this.place);
     this.heading.rotation.y = -rad(o.heading);
+    // Aim at the visual center of the upright model using screen padding. Keep
+    // the camera elevation managed by the terrain engine, including after turns.
+    this.compose();
     const wind = this.rig.update(dt, motion);
     animateBike(this.build, this.lean, wind, dt, o.flying ? 9 : 2.5, this.time, motion);
     this.renderer.resetState();
@@ -159,7 +189,10 @@ export class Ride3D {
     return new Promise((resolve, reject) => {
       const map = this.map = new maplibregl.Map({
         container: this.container, style: MAP_STYLE, center: [35, 31.8], zoom: 8, pitch: 55, maxPitch: 78,
-        attributionControl: { compact: true }, dragRotate: true, touchPitch: true, fadeDuration: 0, antialias: true
+        attributionControl: { compact: true }, dragRotate: true, touchPitch: true, fadeDuration: 0, antialias: true,
+        // Constrain every camera update (including pinch/rotation and the tour)
+        // before rendering, so the bike cannot drift away during a gesture.
+        transformCameraUpdate: () => this.pos ? { center: new maplibregl.LngLat(...this.pos), elevation: groundElevation(this.map, this.pos) } : {}
       });
       // שגיאת אריח בודד לא מפילה את התצוגה; רק אם המפה לא נטענה בכלל
       const timer = setTimeout(() => { if (!this.loaded) { this.map.remove(); this.map = null; reject(new Error('תצוגת התלת־ממד לא נטענה. בדוק את החיבור לאינטרנט.')); } }, 30000);
@@ -196,10 +229,11 @@ export class Ride3D {
         map.on('mouseleave', 'arrows', () => { map.getCanvas().style.cursor = ''; });
         // המשתמש הזיז את המפה בעצמו — עוצרים את הנסיעה הווירטואלית
         for (const ev of ['dragstart', 'rotatestart', 'pitchstart']) map.on(ev, e => { if (e.originalEvent) { this.stopFly(); this.onUserMove?.(); } });
-        const pad = () => { const h = this.container.clientHeight; map.setPadding({ top: Math.round(h * .26), bottom: Math.round(h * .24), left: 0, right: 0 }); };
-        pad();
+        map.dragPan.disable();
+        map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
+        map.on('sourcedata', e => { if (e.sourceId === 'dem' && this.pos) this.recenter(); });
         map.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
-        new ResizeObserver(() => { map.resize(); pad(); }).observe(this.container);
+        new ResizeObserver(() => { map.resize(); this.recenter(); }).observe(this.container);
         resolve();
       });
     });
@@ -230,6 +264,7 @@ export class Ride3D {
   setAlternatives(routes) { this.alternatives = routes; }
   setBike(bike) { this.bike = bike; this.layer?.setBike(bike); }
   setWind(wind) { this.layer?.rig?.set(wind); this.map?.triggerRepaint(); }
+  recenter() { if (this.map && this.pos) this.map.jumpTo({ center: this.pos }); }
 
   // הנקודה על הדרך שמתאימה לנקודת הדגימה, וכיוון הכביש בה
   pointAt(sample) {
@@ -247,7 +282,7 @@ export class Ride3D {
     if (how && !this.overview) {
       const view = { center: pos, bearing: heading + CHASE.side, pitch: CHASE.pitch, zoom: CHASE.zoom };
       if (how === 'snap') this.map.jumpTo(view); else this.map.easeTo({ ...view, duration: 900 });
-    }
+    } else this.recenter();
     this.map.triggerRepaint();
   }
 
@@ -257,11 +292,14 @@ export class Ride3D {
     this.stopFly();
     this.overview = !this.overview;
     if (!this.overview) { this.map.easeTo({ center: this.pos, bearing: this.heading + CHASE.side, pitch: CHASE.pitch, zoom: CHASE.zoom, duration: 1200 }); return false; }
-    const b = new maplibregl.LngLatBounds(this.path[0], this.path[0]);
-    this.path.forEach(c => b.extend(c));
+    // Fit around the rider, including the mirrored extent, so the complete
+    // route is visible while the rider stays at the screen center in this view too.
+    let dx = 0, dy = 0;
+    for (const p of this.path) { dx = Math.max(dx, Math.abs(p[0] - this.pos[0])); dy = Math.max(dy, Math.abs(p[1] - this.pos[1])); }
+    const b = new maplibregl.LngLatBounds([this.pos[0] - dx, this.pos[1] - dy], [this.pos[0] + dx, this.pos[1] + dy]);
     const heading = bearing(this.path[0], this.path.at(-1));
-    const cam = this.map.cameraForBounds(b, { bearing: heading });
-    if (cam) this.map.easeTo({ center: cam.center, zoom: Math.min(13, cam.zoom - .1), bearing: heading, pitch: 52, duration: 1400 });
+    const cam = this.map.cameraForBounds(b, { bearing: heading, padding: { top: 80, bottom: 80, left: 32, right: 32 } });
+    if (cam) this.map.easeTo({ center: this.pos, zoom: Math.min(13, cam.zoom - .5), bearing: heading, pitch: 32, duration: 1400 });
     return true;
   }
 

@@ -7,6 +7,10 @@ const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8'
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url,'http://localhost');
+  if(url.pathname==='/__preview/phone'){
+    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache'});
+    res.end('<!doctype html><html lang="he"><meta charset="utf-8"><title>בדיקה בגודל טלפון · רוח בדרך</title><style>body{margin:0;padding:20px;background:#dfe6df;display:grid;justify-content:center}iframe{display:block;width:375px;height:812px;border:0;border-radius:20px;box-shadow:0 8px 32px #0003}</style><iframe src="/" title="רוח בדרך — תצוגה בגודל 375 על 812" width="375" height="812"></iframe></html>');return;
+  }
   const relative=decodeURIComponent(url.pathname).replace(/^\/+/, '')||'index.html';
   const target=path.resolve(root,relative);
   if(!target.startsWith(path.resolve(root)+path.sep)){res.writeHead(403);res.end();return;}
@@ -16,7 +20,8 @@ const server=http.createServer(async(req,res)=>{
 });
 // PHONE=1 opens the server to the home network so a phone on the same Wi-Fi can try the app.
 const host=process.env.PHONE?'0.0.0.0':'127.0.0.1';
-server.listen(4173,host,async()=>{
- console.log('Local: http://127.0.0.1:4173');
- if(process.env.PHONE){const {networkInterfaces}=await import('node:os');for(const list of Object.values(networkInterfaces()))for(const a of list||[])if(a.family==='IPv4'&&!a.internal)console.log(`Phone (same Wi-Fi): http://${a.address}:4173`);}
+const port=Number(process.argv[2]||4173);
+server.listen(port,host,async()=>{
+ console.log(`Local: http://127.0.0.1:${port}`);
+ if(process.env.PHONE){const {networkInterfaces}=await import('node:os');for(const list of Object.values(networkInterfaces()))for(const a of list||[])if(a.family==='IPv4'&&!a.internal)console.log(`Phone (same Wi-Fi): http://${a.address}:${port}`);}
 });
