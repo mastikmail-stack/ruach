@@ -289,7 +289,10 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
   border-radius: 0 0 28px 28px; box-shadow: 0 10px 30px rgb(15 42 49 / .18);
 }
 @media (prefers-color-scheme: dark) { .hero { background: linear-gradient(#0f2430, #35505a); } }
-.bike-stage { position: absolute; inset: 0; }
+.hero .bike-stage, .hero .hero-map { position: absolute; inset: 0; }
+.hero .hero-map .maplibregl-ctrl-bottom-right { bottom: 74px; }
+.hero-fit { position: absolute; z-index: 3; top: calc(64px + var(--safe-top)); left: 10px; }
+.hero-fit[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
 .bike-stage canvas { width: 100% !important; height: 100% !important; display: block; cursor: grab; }
 .bike-stage canvas:active { cursor: grabbing; }
 .hero-top { position: absolute; z-index: 3; top: calc(10px + var(--safe-top)); inset-inline: 10px; display: flex; align-items: center; gap: 8px; }
@@ -321,7 +324,7 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
   background: color-mix(in srgb, var(--surface) 80%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 .hero-where b { font-size: 16px; color: var(--ink); }
-.hero-hint { position: absolute; z-index: 2; bottom: 66px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 99px; font-size: 12px; color: #fff; background: rgb(0 0 0 / .35); pointer-events: none; transition: opacity .6s; }
+.hero-hint { position: absolute; z-index: 2; bottom: 82px; left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 4px 12px; border-radius: 99px; font-size: 12px; color: #fff; background: rgb(0 0 0 / .35); pointer-events: none; transition: opacity .6s; }
 .hero-hint.gone { opacity: 0; }
 .hero-loading { position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 99px; background: var(--surface); box-shadow: var(--shadow); font-weight: 600; font-size: 14px; }
 .hero-fallback { position: absolute; inset: 0; display: grid; place-items: center; }
@@ -330,21 +333,7 @@ svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2
 .hero-controls .strip-ends { align-items: center; }
 .point-rain { text-align: center; margin-top: 6px; }
 
-.map-card { padding: 0; overflow: hidden; }
-.ride-map-wrap { position: relative; height: 340px; }
-.map-tools { position: absolute; z-index: 700; top: 10px; inset-inline: 10px; display: flex; justify-content: space-between; align-items: center; }
-#ride-map, #ride-map3d { position: absolute; inset: 0; background: #dde5e0; }
-.mode-switch {
-  display: flex; padding: 3px; border-radius: 99px; background: var(--surface); box-shadow: var(--shadow);
-}
-.mode-switch button { min-height: 34px; padding: 0 14px; border-radius: 99px; font-size: 13.5px; font-weight: 700; color: var(--ink-2); }
-.mode-switch button[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); }
-.map-loading { position: absolute; z-index: 700; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 16px; border-radius: 99px; background: var(--surface); box-shadow: var(--shadow); font-weight: 600; font-size: 14px; }
-.bike-3d svg { width: 40px; height: 40px; filter: drop-shadow(0 3px 5px rgb(0 0 0 / .45)); }
-.bike-3d circle { fill: #0f2a31; stroke: #ffffff; stroke-width: 3; }
-.bike-3d path { fill: #d7f08f; stroke: none; }
 .maplibregl-ctrl-attrib { font-size: 10px; }
-body[data-mode="3d"] .map-legend { bottom: 34px; }
 .map-top {
   position: absolute; z-index: 500; top: calc(10px + var(--safe-top)); inset-inline: 10px;
   display: flex; align-items: center; gap: 10px;
@@ -355,14 +344,9 @@ body[data-mode="3d"] .map-legend { bottom: 34px; }
 }
 .map-title b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
 .map-title span { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
-.map-legend {
-  position: absolute; z-index: 500; bottom: 12px; left: 10px;
-  display: flex; gap: 10px; padding: 5px 10px; border-radius: 99px; font-size: 12px;
-  background: var(--surface); box-shadow: var(--shadow); color: var(--ink-2);
-}
-.map-legend i, .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-inline-end: 4px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-inline-end: 4px; }
+.dot { background: var(--c); }
 .low { --c: var(--low); } .mid { --c: var(--mid); } .high { --c: var(--high); }
-.map-legend i, .dot { background: var(--c); }
 
 .sheet {
   position: relative; z-index: 1;
@@ -481,19 +465,9 @@ tr.selected td { background: var(--surface-2); }
 .footnote { margin-top: 16px; padding: 0 4px; }
 
 /* סמנים במפה */
-.wind-marker {
-  display: inline-flex; align-items: center; gap: 1px; padding: 1px 6px 1px 4px; border-radius: 99px; opacity: .92;
-  background: #fff; color: var(--c); font: 700 12px/18px Heebo, Arial, sans-serif;
-  box-shadow: 0 1px 6px rgb(0 0 0 / .3); border: 2px solid var(--c); white-space: nowrap;
-}
-.wind-marker svg { width: 14px; height: 14px; stroke-width: 3; }
-.end-marker { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: #0f2a31; color: #d7f08f; font: 800 12px/1 Heebo, Arial, sans-serif; border: 3px solid #fff; box-shadow: 0 1px 6px rgb(0 0 0 / .35); }
-.end-marker.start { background: #fff; color: #0f2a31; border-color: #1f7a6d; }
-.end-marker.stop { width: 20px; height: 20px; background: #7d8f92; color: #fff; font-size: 10px; }
 .leaflet-container { font-family: Heebo, Arial, sans-serif; }
 .leaflet-container svg { width: auto; height: auto; fill: initial; stroke: initial; stroke-width: initial; }
-.leaflet-container .wind-marker svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 3; }
-.leaflet-control-attribution { font-size: 10px; }
+.leaflet-container .leaflet-control-attribution { font-size: 10px; }
 
 /* ---------- חלונות ---------- */
 dialog { border: 0; padding: 0; color: var(--ink); background: var(--surface); }

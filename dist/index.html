@@ -16,10 +16,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap">
   <link rel="stylesheet" href="./vendor/leaflet.css">
-  <link rel="stylesheet" href="./app.css?v=9">
+  <link rel="stylesheet" href="./app.css?v=11">
   <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
   <script src="./vendor/leaflet.js" defer></script>
-  <script type="module" src="./app.mjs?v=9"></script>
+  <script type="module" src="./app.mjs?v=11"></script>
 </head>
 <body data-view="plan">
 <svg class="icons" aria-hidden="true"><defs>
@@ -114,7 +114,8 @@
 <!-- ===================== מסך רכיבה ===================== -->
 <section id="view-ride" class="view" hidden aria-labelledby="ride-title">
   <div class="hero" id="hero">
-    <div id="bike-stage" class="bike-stage"></div>
+    <div id="ride-map3d" class="hero-map" dir="ltr" aria-label="מפת תלת־ממד של הדרך עם האופנוע וזרמי הרוח"></div>
+    <div id="bike-stage" class="bike-stage" hidden></div>
     <div class="hero-fallback" id="hero-fallback" hidden>
       <svg class="compass" viewBox="0 0 200 200" role="img" aria-label="המחשת כיוון הרוח ביחס לאופנוע">
             <defs>
@@ -142,14 +143,15 @@
       <div class="hero-title"><b id="ride-title"></b><span id="ride-subtitle"></span></div>
       <button type="button" class="bike-chip" id="pick-bike" aria-label="בחירת אופנוע"><svg><use href="#i-bike"/></svg><span id="bike-label">נייקד</span></button>
     </div>
+    <button type="button" class="round-button raised hero-fit" id="fit-route" aria-label="מבט על כל הדרך" aria-pressed="false"><svg><use href="#i-fit"/></svg></button>
     <div class="hero-hud" aria-live="polite">
       <span id="point-relation" class="relation-chip"></span>
       <div class="hud-big"><b id="point-cross"></b><span>קמ״ש<br>משב צד</span></div>
       <div class="hud-small"><span>רוח <b id="point-wind"></b></span><span>משבים <b id="point-gust"></b></span></div>
     </div>
     <div class="hero-where"><b id="point-road"></b><span id="point-where"></span><span id="point-weather"></span></div>
-    <div class="hero-loading" id="hero-loading"><span class="spinner"></span>מכין את האופנוע…</div>
-    <span class="hero-hint" id="hero-hint">↔ גרור כדי לסובב</span>
+    <div class="hero-loading" id="hero-loading"><span class="spinner"></span>מכין את המפה והאופנוע…</div>
+    <span class="hero-hint" id="hero-hint">שתי אצבעות: סיבוב והטיה</span>
   </div>
 
   <section class="hero-controls" aria-labelledby="point-heading">
@@ -173,20 +175,6 @@
     <div id="verdict" class="verdict"></div>
     <div id="metrics" class="metrics"></div>
     <div class="card weather-card"><h2>מזג האוויר בדרך</h2><p id="weather-summary"></p></div>
-
-    <section class="card map-card" aria-label="מפת הדרך">
-      <div class="ride-map-wrap">
-        <div id="ride-map" dir="ltr" aria-label="מפת המסלול עם חיצי רוח"></div>
-        <div id="ride-map3d" dir="ltr" hidden aria-label="מפת תלת־ממד של הדרך עם זרמי רוח"></div>
-        <div class="map-loading" id="map-loading" hidden><span class="spinner"></span>טוען תלת־ממד…</div>
-        <div class="map-tools">
-          <div class="mode-switch" role="group" aria-label="סוג מפה"><button type="button" data-mode="2d" aria-pressed="true">מפה</button><button type="button" data-mode="3d" aria-pressed="false">שטח בתלת־ממד</button></div>
-          <button type="button" class="round-button raised small" id="fit-route" aria-label="הצגת כל המסלול"><svg><use href="#i-fit"/></svg></button>
-        </div>
-        <div class="map-legend" aria-hidden="true"><span><i class="low"></i>חלשה</span><span><i class="mid"></i>מורגשת</span><span><i class="high"></i>חזקה</span></div>
-      </div>
-    </section>
-
     <section class="card" aria-labelledby="chart-heading">
       <div class="card-head"><h2 id="chart-heading">עוצמת הרוח לאורך הדרך</h2><span class="chart-key"><i class="k-wind"></i>רוח <i class="k-gust"></i>משבים</span></div>
       <div id="chart"></div>

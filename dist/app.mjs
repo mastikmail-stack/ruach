@@ -1,9 +1,9 @@
-import { ZONE, localParts, addDays, departureEpoch, validateDeparture, parseRoads, chooseRoute, sampleRoute, roadRefs, weatherAt, band, directionName } from './core.mjs?v=9';
-import { windRelation } from './view.mjs?v=9';
-import { navigationLinks, forecastPlan } from './navigation.mjs?v=9';
-import { Ride3D, supports3D } from './ride3d.mjs?v=9';
-import { BikeStage, BIKE_TYPES, BIKE_COLORS } from './bike3d.mjs?v=9';
-import { conditionsAt, conditionName, summarizeConditions, compareWind } from './conditions.mjs?v=9';
+import { ZONE, localParts, addDays, departureEpoch, validateDeparture, parseRoads, chooseRoute, sampleRoute, roadRefs, weatherAt, band, directionName } from './core.mjs?v=11';
+import { windRelation } from './view.mjs?v=11';
+import { navigationLinks, forecastPlan } from './navigation.mjs?v=11';
+import { Ride3D, supports3D } from './ride3d.mjs?v=11';
+import { BikeStage, BIKE_TYPES, BIKE_COLORS } from './bike3d.mjs?v=11';
+import { conditionsAt, conditionName, summarizeConditions, compareWind } from './conditions.mjs?v=11';
 
 /* ---------- עזרים ---------- */
 const $ = q => document.querySelector(q);
@@ -44,10 +44,10 @@ let active = 0;
 let fetchedAt = 0;
 let job = 0, busy = false;
 let knownRoads = [];
-let mode = store.get('ruach-map-mode', '2d'), r3d = null;
+let r3d = null, heroMode = null, heroLoading = null;   // heroMode: 'map' | 'stage' | 'flat'
 let userMoved = false;
-let bike = store.get('ruach-bike', { type: 'naked', color: BIKE_COLORS[0] }), stage = null, stageFailed = false;
-let rideMap, rideLayers, pickMap, selected = 0, tourTimer, compassAngle = 0, installPrompt;
+let bike = store.get('ruach-bike', { type: 'naked', color: BIKE_COLORS[0] }), stage = null;
+let pickMap, selected = 0, tourTimer, compassAngle = 0, installPrompt;
 
 /* ---------- הודעות ---------- */
 let toastTimer;
@@ -538,25 +538,42 @@ function openRide(index) {
   $('#install-banner').hidden = true;
   window.scrollTo({ top: 0, behavior: 'instant' });
   renderRide();
-  stage?.resume();
+  stage?.resume(); r3d?.resume();
 }
 
 /* ---------- האופנוע בתלת־ממד ---------- */
-async function ensureStage() {
-  if (stage || stageFailed) return;
-  if (!supports3D()) { stageFailed = true; showFallback(); return; }
-  $('#hero-loading').hidden = false;
-  try {
-    const s = new BikeStage($('#bike-stage'));
-    await s.init();
-    stage = s; stage.setBike(bike);
-    if (selected >= 0) selectSample(selected, false);
-    if (document.body.dataset.view !== 'ride') stage.pause();
-    setTimeout(() => $('#hero-hint').classList.add('gone'), 5000);
-  } catch (e) {
-    console.warn('3D bike:', e);
-    stageFailed = true; showFallback();
-  } finally { $('#hero-loading').hidden = true; }
+// המפה עם האופנוע היא החלק העליון של מסך הרכיבה. אם המפה לא נטענת — במת אופנוע בלי מפה; ואם גם
+// תלת־ממד לא זמין — מצפן שטוח.
+function showHero() {
+  heroLoading ??= (async () => {
+    const o = ride();
+    if (heroMode === 'map') { r3d.setAlternatives(options.filter((_, i) => i !== active).map(x => x.route)); await r3d.open(o, places); return; }
+    if (heroMode) return;
+    if (!supports3D()) { heroMode = 'flat'; showFallback(); return; }
+    $('#hero-loading').hidden = false;
+    try {
+      r3d = new Ride3D($('#ride-map3d'), { colorOf, bandOf: band, bike, onSelect: i => { stopTour(); userMoved = true; selectSample(i, 'ease'); }, onUserMove: () => { stopTour(); $('#hero-hint').classList.add('gone'); } });
+      r3d.setAlternatives(options.filter((_, i) => i !== active).map(x => x.route));
+      await r3d.open(o, places);
+      heroMode = 'map';
+      setTimeout(() => $('#hero-hint').classList.add('gone'), 6000);
+    } catch (e) {
+      console.warn('3D map:', e);
+      $('#ride-map3d').hidden = true; r3d = null;
+      try {
+        stage = new BikeStage($('#bike-stage'));
+        $('#bike-stage').hidden = false;
+        await stage.init(); stage.setBike(bike);
+        heroMode = 'stage';
+        $('#hero-hint').textContent = '↔ גרור כדי לסובב';
+      } catch (e2) { console.warn('3D bike:', e2); heroMode = 'flat'; stage = null; $('#bike-stage').hidden = true; showFallback(); }
+    } finally { $('#hero-loading').hidden = true; }
+  })().finally(() => {
+    heroLoading = null;
+    if (document.body.dataset.view !== 'ride') { r3d?.pause(); stage?.pause(); }
+    if (selected >= 0) selectSample(selected, 'snap');
+  });
+  return heroLoading;
 }
 function showFallback() {
   $('#hero-loading').hidden = true; $('#hero-hint').hidden = true;
@@ -573,7 +590,7 @@ function openBikePicker() {
 function applyBike(next) {
   bike = next; store.set('ruach-bike', bike);
   $('#bike-label').textContent = bikeName();
-  stage?.setBike(bike);
+  stage?.setBike(bike); r3d?.setBike(bike);
   document.querySelectorAll('#bike-types [data-type]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.type === bike.type)));
   document.querySelectorAll('#bike-colors [data-color]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.color === bike.color)));
 }
@@ -629,30 +646,11 @@ function renderRide() {
   const spacing = km(route.distance / (samples.length - 1));
   $('#forecast-note').textContent = `נבדקה נקודה כל כ־${spacing} ק״מ, לפי שעת ההגעה המשוערת אליה. זו תחזית מודל בגובה 10 מ׳ — לא מדידה על הכביש, ובלי השפעת בניינים, גשרים או מנהרות. גשם: כמות לשעת ההגעה לכל נקודה. זמני הנסיעה ללא פקקים. התחזית התקבלה ב־${timeLabel(fetchedAt)} — כדאי לבדוק שוב לפני היציאה.`;
 
-  initRideMap();
-  drawRideMap();
   renderChart();
   selected = -1; userMoved = false;
+  $('#fit-route').setAttribute('aria-pressed', 'false'); if (r3d) r3d.overview = false;
   selectSample(worst, false);
-  setMode(mode);
-  ensureStage();
-}
-
-/* ---------- מפה רגילה / תלת־ממד ---------- */
-async function setMode(next) {
-  if (next === '3d' && !supports3D()) { toast('הטלפון הזה לא תומך בתצוגת תלת־ממד.'); next = '2d'; }
-  stopTour();
-  mode = next; store.set('ruach-map-mode', mode);
-  document.body.dataset.mode = mode;
-  document.querySelectorAll('.mode-switch [data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
-  $('#ride-map').hidden = mode === '3d'; $('#ride-map3d').hidden = mode !== '3d';
-  if (mode === '2d') { r3d?.pause(); requestAnimationFrame(() => { rideMap?.invalidateSize(); fitRoute(); }); return; }
-  r3d ??= new Ride3D($('#ride-map3d'), { colorOf, bandOf: band, onSelect: i => { stopTour(); selectSample(i, false); scrollToPoint(); } });
-  r3d.setAlternatives(options.filter((_, i) => i !== active).map(o => o.route));
-  $('#map-loading').hidden = false;
-  try { await r3d.open(ride(), places); r3d.select(selected, false); }
-  catch (e) { toast(e.message || 'תצוגת התלת־ממד לא נטענה.'); mode = '2d'; setMode('2d'); }
-  finally { $('#map-loading').hidden = true; }
+  showHero();
 }
 
 function selectSample(index, pan) {
@@ -664,7 +662,8 @@ function selectSample(index, pan) {
   const level = band(s.crossGust);
   const hero = $('#hero');
   hero.classList.remove('low', 'mid', 'high'); hero.classList.add(level);
-  stage?.setWind({ rel: rel.relative, speed: s.speed, gust: s.gust, signedCross: s.signedCross, color: colorOf(level) });
+  const wind = { rel: rel.relative, speed: s.speed, gust: s.gust, signedCross: s.signedCross, color: colorOf(level) };
+  stage?.setWind(wind); r3d?.setWind(wind);
   $('#point-road').textContent = s.road;
   $('#point-where').textContent = `ק״מ ${km(s.distance)} · הגעה בסביבות ${timeLabel(s.epoch)}`;
   $('#point-relation').textContent = rel.visible ? rel.label : 'כמעט בלי רוח';
@@ -676,9 +675,9 @@ function selectSample(index, pan) {
   // סיבוב בדרך הקצרה ביותר, כדי שהחצים לא יסתובבו סיבוב שלם
   const diff = ((rel.relative - compassAngle) % 360 + 540) % 360 - 180;
   compassAngle += diff;
-  const wind = $('#compass-wind');
-  wind.style.transform = `rotate(${compassAngle}deg)`;
-  wind.style.opacity = rel.visible ? '1' : '0';
+  const arrows = $('#compass-wind');
+  arrows.style.transform = `rotate(${compassAngle}deg)`;
+  arrows.style.opacity = rel.visible ? '1' : '0';
   $('#point-counter').textContent = `נקודה ${selected + 1} מתוך ${samples.length}`;
   $('#scrubber').value = selected;
   $('#scrubber').setAttribute('aria-valuetext', `${s.road}, קילומטר ${km(s.distance)}, משב צד ${round(s.crossGust)} קמ״ש`);
@@ -687,63 +686,14 @@ function selectSample(index, pan) {
   document.querySelectorAll('#sample-rows tr').forEach(tr => tr.classList.toggle('selected', +tr.dataset.row === selected));
   const cursor = $('#chart-cursor');
   if (cursor && chartX) { const x = chartX(s.distance); cursor.setAttribute('x1', x); cursor.setAttribute('x2', x); }
-  if (mode === '3d') r3d?.select(selected, pan);
-  if (rideMap && rideLayers) {
-    rideLayers.selected.clearLayers();
-    L.circleMarker([s.lat, s.lon], { radius: 10, color: '#0f2a31', weight: 4, fillColor: '#ffffff', fillOpacity: 1 }).addTo(rideLayers.selected);
-    if (pan) rideMap.panTo([s.lat, s.lon], { animate: true, duration: .8 });
-  }
+  // pan: 'snap' או 'ease' מזיזים את המצלמה אל מאחורי הרוכב
+  if (heroMode === 'map') r3d.select(selected, pan === true ? 'ease' : pan || null);
 }
 function scrollToPoint() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-/* ---------- מפה ---------- */
-function initRideMap() {
-  if (rideMap || !window.L) return;
-  rideMap = L.map('ride-map', { zoomControl: false, attributionControl: true, scrollWheelZoom: true });
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(rideMap);
-  rideLayers = { alt: L.layerGroup().addTo(rideMap), route: L.layerGroup().addTo(rideMap), wind: L.layerGroup().addTo(rideMap), ends: L.layerGroup().addTo(rideMap), selected: L.layerGroup().addTo(rideMap) };
-  new ResizeObserver(() => rideMap.invalidateSize()).observe($('#ride-map'));
-}
 const colorOf = level => getComputedStyle(document.documentElement).getPropertyValue(`--${level}`).trim() || '#2a9d7f';
-function fitRoute() {
-  const o = ride(); if (!rideMap || !o) return;
-  const coords = o.route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-  rideMap.fitBounds(L.latLngBounds(coords), { paddingTopLeft: [24, 72], paddingBottomRight: [24, 48], maxZoom: 14 });
-}
-function drawRideMap() {
-  if (!rideMap) return;
-  const o = ride();
-  Object.values(rideLayers).forEach(l => l.clearLayers());
-  options.forEach((alt, i) => {
-    if (i === active) return;
-    L.polyline(alt.route.geometry.coordinates.map(([lon, lat]) => [lat, lon]), { color: '#7d8f92', weight: 5, opacity: .7, dashArray: '2 9' })
-      .addTo(rideLayers.alt).bindTooltip(`${routeName(alt.route)} · ${Math.ceil(alt.route.duration / 60)} דק׳`).on('click', () => { active = i; renderRide(); });
-  });
-  const coords = o.route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-  L.polyline(coords, { color: '#ffffff', weight: 10, opacity: .95 }).addTo(rideLayers.route);
-  let offset = 0, si = 0;
-  for (const leg of o.route.legs) for (const step of leg.steps) {
-    while (si < o.samples.length - 1 && o.samples[si + 1].distance < offset + step.distance / 2) si++;
-    L.polyline(step.geometry.coordinates.map(([lon, lat]) => [lat, lon]), { color: colorOf(band(o.samples[si].crossGust)), weight: 6, opacity: 1 }).addTo(rideLayers.route);
-    offset += step.distance;
-  }
-  const every = Math.max(1, Math.ceil(o.samples.length / 6));
-  o.samples.forEach((s, i) => {
-    if (i % every !== 0 || i === 0) return;
-    const html = `<div class="wind-marker ${band(s.crossGust)}"><svg viewBox="0 0 24 24" style="transform:rotate(${s.direction + 180}deg)"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>${round(s.crossGust)}</div>`;
-    L.marker([s.lat, s.lon], { icon: L.divIcon({ className: '', html, iconSize: [46, 26], iconAnchor: [23, 13] }), keyboard: false })
-      .addTo(rideLayers.wind).on('click', () => { stopTour(); selectSample(i, false); scrollToPoint(); });
-  });
-  places.forEach((p, i) => {
-    const kind = i === 0 ? 'start' : i === places.length - 1 ? 'end' : 'stop';
-    const label = kind === 'start' ? 'א' : kind === 'end' ? 'ב' : i;
-    L.marker([p.point.lat, p.point.lon], { icon: L.divIcon({ className: '', html: `<div class="end-marker ${kind}">${label}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }), keyboard: false, interactive: false }).addTo(rideLayers.ends);
-  });
-  requestAnimationFrame(() => { rideMap.invalidateSize(); fitRoute(); });
-  setTimeout(() => { rideMap.invalidateSize(); fitRoute(); }, 350);
-}
 
 /* ---------- גרף ---------- */
 let chartX = null;
@@ -788,12 +738,11 @@ function startTour() {
   $('#play-tour').setAttribute('aria-pressed', 'true');
   $('#play-tour').innerHTML = `${icon('pause')}<span>עצירה</span>`;
   scrollToPoint();
-  if (mode === '3d' && r3d) {
-    tourTimer = 'fly';
+  if (heroMode === 'map') {
+    tourTimer = 'fly'; $('#fit-route').setAttribute('aria-pressed', 'false');
     r3d.fly({ startIndex: selected, onStep: i => selectSample(i, false), onEnd: stopTour });
     return;
   }
-  if (rideMap) rideMap.setView([o.samples[selected].lat, o.samples[selected].lon], Math.max(rideMap.getZoom(), 11));
   tourTimer = setInterval(() => {
     if (!ride()?.ready || selected >= ride().samples.length - 1) { stopTour(); return; }
     selectSample(selected + 1, true);
@@ -849,15 +798,20 @@ document.addEventListener('pointerdown', e => {
 
 $('#ride-back').onclick = () => { if (history.state?.ride) history.back(); else showPlan(); };
 window.addEventListener('popstate', () => { if (document.body.dataset.view === 'ride') showPlan(); });
-$('#fit-route').onclick = () => mode === '3d' ? r3d?.fit() : fitRoute();
-document.querySelectorAll('.mode-switch [data-mode]').forEach(b => b.onclick = () => { if (b.dataset.mode !== mode) setMode(b.dataset.mode); });
+$('#fit-route').onclick = () => {
+  if (heroMode !== 'map') return;
+  stopTour();
+  const overview = r3d.toggleOverview();
+  $('#fit-route').setAttribute('aria-pressed', String(overview));
+  $('#fit-route').setAttribute('aria-label', overview ? 'חזרה לרוכב' : 'מבט על כל הדרך');
+};
 $('#scrubber').addEventListener('input', e => { stopTour(); userMoved = true; selectSample(+e.target.value, true); });
 $('#prev-point').onclick = () => { stopTour(); userMoved = true; selectSample(selected - 1, true); };
 $('#next-point').onclick = () => { stopTour(); userMoved = true; selectSample(selected + 1, true); };
 $('#play-tour').onclick = () => tourTimer ? stopTour() : startTour();
 $('#pick-bike').onclick = openBikePicker;
 $('#bike-label').textContent = bikeName();
-$('#bike-stage').addEventListener('pointerdown', () => $('#hero-hint').classList.add('gone'), { once: true });
+$('#hero').addEventListener('pointerdown', () => setTimeout(() => $('#hero-hint').classList.add('gone'), 2500), { once: true });
 $('#refresh-forecast').onclick = () => { $('#stale-banner').hidden = true; calculate(); };
 new ResizeObserver(() => { if (document.body.dataset.view === 'ride' && ride()?.ready) { renderChart(); selectSample(selected, false); } }).observe($('#chart'));
 

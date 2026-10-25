@@ -1,11 +1,15 @@
-// תצוגת תלת־ממד: מפה עם תבליט שטח אמיתי, זרמי רוח מונפשים וטיסת מצלמה לאורך הדרך.
-// MapLibre נטען רק כשפותחים את התצוגה, כדי שהאפליקציה תישאר קלה.
+// מסך הרכיבה: מפת תלת־ממד עם תבליט שטח, זרמי רוח לאורך הדרך, ואופנוע תלת־ממד שנוסע על הכביש עצמו.
+// MapLibre נטען רק כשפותחים את התצוגה; האופנוע מצויר בשכבה מותאמת (custom layer) של Three.js.
+import { loadThree, buildBike, WindRig, animateBike } from './bike3d.mjs?v=11';
+
 const VERSION = '4.7.1';
 const SCRIPT = `https://cdn.jsdelivr.net/npm/maplibre-gl@${VERSION}/dist/maplibre-gl.js`;
 const STYLE_SHEET = `https://cdn.jsdelivr.net/npm/maplibre-gl@${VERSION}/dist/maplibre-gl.css`;
 const RTL_PLUGIN = 'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.js';
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 const TERRAIN = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+const CHASE = { pitch: 62, zoom: 15.6, side: 24 };  // מבט מאחורי הרוכב, מעט מהצד כדי לראות את צורת האופנוע
+const FLY_ZOOM = 14.6;                          // בזמן נסיעה וירטואלית — קצת יותר רחוק
 
 const rad = d => d * Math.PI / 180;
 const deg = r => r * 180 / Math.PI;
@@ -54,21 +58,100 @@ function arrowImage() {
   return g.getImageData(0, 0, size, size);
 }
 
+/* ---------- שכבת האופנוע: Three.js בתוך המפה ---------- */
+// עם תבליט שטח, MapLibre מצייר שכבות לתוך משטח הפוך, ולכן כיוון הפאות מתהפך (רואים את פנים הצורות,
+// אפור וכהה). מיקומים וכיוונים לא מושפעים — רק איזו פאה נחשבת "חיצונית". הופכים את צד החומרים.
+function flipSides(T, root) {
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const list = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of list) if (m.side === T.FrontSide) m.side = T.BackSide;
+  });
+}
+
+// האופנוע נשמר בגודל קבוע על המסך (בערך 40% מרוחב המפה) בכל רמת זום, ועומד על פני השטח.
+class BikeLayer {
+  constructor(owner) {
+    Object.assign(this, { id: 'bike', type: 'custom', renderingMode: '3d', owner });
+    this.time = 0; this.last = performance.now();
+  }
+  onAdd(map, gl) {
+    const T = this.T;
+    this.map = map;
+    this.camera = new T.Camera();
+    this.scene = new T.Scene();
+    this.scene.add(new T.HemisphereLight('#e8f4ff', '#6d7f5a', .45));
+    const sun = new T.DirectionalLight('#fff4dc', 1.3); sun.position.set(-3, 6, 4); this.scene.add(sun);
+    const fill = new T.DirectionalLight('#cfe3ff', .3); fill.position.set(4, 3, -3); this.scene.add(fill);
+    this.renderer = new T.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
+    this.renderer.autoClear = false;
+    // תאורה מוחזרת, כדי שהצבע והכרום ייראו טוב על רקע המפה
+    if (this.Room) { this.scene.environment = new T.PMREMGenerator(this.renderer).fromScene(new this.Room(), .04).texture; this.scene.environmentIntensity = .55; this.renderer.resetState(); }
+    this.root = new T.Group();
+    this.heading = new T.Group(); this.root.add(this.heading);
+    const shadow = new T.Mesh(new T.CircleGeometry(1, 32), new T.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: .16, depthWrite: false, side: T.DoubleSide }));
+    shadow.rotation.x = -Math.PI / 2; shadow.position.y = .02; shadow.scale.set(.55, 1.25, 1);
+    this.heading.add(shadow);
+    this.lean = new T.Group(); this.heading.add(this.lean);
+    this.rig = new WindRig(); this.heading.add(this.rig.group);
+    flipSides(T, this.rig.group);
+    // החץ וזרמי האוויר נראים מעל הבניינים והשטח, אבל האופנוע עדיין מצויר מעליהם
+    this.rig.group.traverse(o => { if (o.isMesh) { o.material.depthTest = false; o.material.depthWrite = false; o.renderOrder = -1; } });
+    this.scene.add(this.root);
+    this.place = new T.Matrix4(); this.rotX = new T.Matrix4().makeRotationAxis(new T.Vector3(1, 0, 0), Math.PI / 2);
+    this.scaleV = new T.Vector3(); this.proj = new T.Matrix4();
+    if (this.pendingBike) this.setBike(this.pendingBike);
+  }
+  setBike(bike) {
+    if (!this.lean) { this.pendingBike = bike; return; }
+    this.lean.clear();
+    this.build = buildBike(bike);
+    flipSides(this.T, this.build.group);
+    this.lean.add(this.build.group);
+    this.map?.triggerRepaint();
+  }
+  render(gl, matrix) {
+    const o = this.owner, map = this.map;
+    if (!o.pos || !this.build) return;
+    const now = performance.now(), dt = Math.min(.05, (now - this.last) / 1000); this.last = now;
+    this.time += dt;
+    const motion = o.reduced ? 0 : 1;
+    const elevation = map.queryTerrainElevation?.(o.pos) || 0;
+    const mc = maplibregl.MercatorCoordinate.fromLngLat(o.pos, elevation);
+    const canvas = map.getCanvas();
+    // בגודל קבוע על המסך; במבט על כל הדרך — קטן יותר, כמו סמן
+    const px = o.overview ? 64 : Math.min(260, Math.max(120, Math.min(canvas.clientWidth, canvas.clientHeight) * .42));
+    const metersPerPixel = 40075016.686 * Math.cos(rad(o.pos[1])) / (512 * 2 ** map.getZoom());
+    const size = Math.max(1, metersPerPixel * px / 2.3);
+    const s = mc.meterInMercatorCoordinateUnits() * size;
+    this.place.makeTranslation(mc.x, mc.y, mc.z).scale(this.scaleV.set(s, -s, s)).multiply(this.rotX);
+    this.camera.projectionMatrix = this.proj.fromArray(matrix).multiply(this.place);
+    this.heading.rotation.y = -rad(o.heading);
+    const wind = this.rig.update(dt, motion);
+    animateBike(this.build, this.lean, wind, dt, o.flying ? 9 : 2.5, this.time, motion);
+    this.renderer.resetState();
+    this.renderer.render(this.scene, this.camera);
+    if (o.running) map.triggerRepaint();
+  }
+}
+
 export class Ride3D {
-  constructor(container, { colorOf, bandOf, onSelect }) {
+  constructor(container, { colorOf, bandOf, onSelect, onUserMove, bike }) {
     this.container = container;
-    this.colorOf = colorOf; this.bandOf = bandOf; this.onSelect = onSelect;
+    Object.assign(this, { colorOf, bandOf, onSelect, onUserMove });
+    this.bike = bike;
     this.map = null; this.ready = null; this.option = null;
     this.particles = []; this.running = false; this.flying = null; this.lastFrame = 0; this.lastPush = 0;
+    this.pos = null; this.heading = 0; this.overview = false;
+    this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
   async open(option, places) {
     this.option = option; this.places = places;
-    await loadLibrary();
+    await Promise.all([loadLibrary(), loadThree()]);
     if (!this.map) this.ready = this.create();
     await this.ready;
     this.draw();
-    this.fit(false);
     this.resume();
   }
 
@@ -76,12 +159,12 @@ export class Ride3D {
     return new Promise((resolve, reject) => {
       const map = this.map = new maplibregl.Map({
         container: this.container, style: MAP_STYLE, center: [35, 31.8], zoom: 8, pitch: 55, maxPitch: 78,
-        attributionControl: { compact: true }, dragRotate: true, touchPitch: true, fadeDuration: 0
+        attributionControl: { compact: true }, dragRotate: true, touchPitch: true, fadeDuration: 0, antialias: true
       });
       // שגיאת אריח בודד לא מפילה את התצוגה; רק אם המפה לא נטענה בכלל
       const timer = setTimeout(() => { if (!this.loaded) { this.map.remove(); this.map = null; reject(new Error('תצוגת התלת־ממד לא נטענה. בדוק את החיבור לאינטרנט.')); } }, 30000);
       map.on('error', e => console.warn('3D map:', e.error?.message || e));
-      map.on('load', () => {
+      map.on('load', async () => {
         this.loaded = true; clearTimeout(timer);
         map.addSource('dem', { type: 'raster-dem', tiles: [TERRAIN], tileSize: 256, encoding: 'terrarium', maxzoom: 14, attribution: 'תבליט: Mapzen / AWS Terrain Tiles' });
         map.addSource('dem-shade', { type: 'raster-dem', tiles: [TERRAIN], tileSize: 256, encoding: 'terrarium', maxzoom: 14 });
@@ -93,25 +176,30 @@ export class Ride3D {
           if (field && JSON.stringify(field).includes('name')) map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:he'], ['get', 'name']]);
         }
         map.addLayer({ id: 'shade', type: 'hillshade', source: 'dem-shade', paint: { 'hillshade-exaggeration': .45, 'hillshade-shadow-color': '#2d3f3a' } }, firstSymbol);
-        map.setTerrain({ source: 'dem', exaggeration: 1.7 });
+        map.setTerrain({ source: 'dem', exaggeration: 1.4 });
         try { map.setSky?.({ 'sky-color': '#9fc7dc', 'horizon-color': '#e4eef0', 'fog-color': '#e8f0ee', 'sky-horizon-blend': .6, 'horizon-fog-blend': .7, 'fog-ground-blend': .4 }); } catch {}
         map.addImage('wind-arrow', arrowImage(), { sdf: true });
         const empty = { type: 'FeatureCollection', features: [] };
         for (const id of ['alts', 'route', 'particles', 'arrows']) map.addSource(id, { type: 'geojson', data: empty });
         map.addLayer({ id: 'alts', type: 'line', source: 'alts', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#7d8f92', 'line-width': 4, 'line-opacity': .7, 'line-dasharray': [1, 2] } });
-        map.addLayer({ id: 'route-casing', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 14, 14] } });
-        map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 14, 9] } });
+        map.addLayer({ id: 'route-casing', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 14, 14, 17, 26] } });
+        map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 14, 9, 17, 18], 'line-opacity': .85 } });
         map.addLayer({ id: 'particles', type: 'line', source: 'particles', layout: { 'line-cap': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-opacity': ['get', 'a'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.6, 14, 3.2] } });
-        map.addLayer({ id: 'arrows', type: 'symbol', source: 'arrows', layout: { 'icon-image': 'wind-arrow', 'icon-rotate': ['get', 'rot'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 8, ['*', .35, ['get', 's']], 14, ['*', 1.1, ['get', 's']]] }, paint: { 'icon-color': ['get', 'color'], 'icon-halo-color': 'rgba(255,255,255,.9)', 'icon-halo-width': 2 } });
+        map.addLayer({ id: 'arrows', type: 'symbol', source: 'arrows', layout: { 'icon-image': 'wind-arrow', 'icon-rotate': ['get', 'rot'], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 8, ['*', .35, ['get', 's']], 14, ['*', 1.1, ['get', 's']]] }, paint: { 'icon-color': ['get', 'color'], 'icon-halo-color': 'rgba(255,255,255,.9)', 'icon-halo-width': 2, 'icon-opacity': ['interpolate', ['linear'], ['zoom'], 13, 1, 15, .25] } });
+        this.layer = new BikeLayer(this);
+        this.layer.T = await loadThree();
+        try { this.layer.Room = (await import('three/addons/environments/RoomEnvironment.js')).RoomEnvironment; } catch {}
+        this.layer.setBike(this.bike);
+        map.addLayer(this.layer);
         map.on('click', 'arrows', e => { const i = e.features?.[0]?.properties?.i; if (Number.isFinite(i)) this.onSelect(i); });
         map.on('mouseenter', 'arrows', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'arrows', () => { map.getCanvas().style.cursor = ''; });
-        map.on('dragstart', () => this.stopFly());
-        const bike = document.createElement('div');
-        bike.className = 'bike-3d';
-        bike.innerHTML = '<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17"/><path d="M20 8 29 28 20 23 11 28Z"/></svg>';
-        this.bike = new maplibregl.Marker({ element: bike, rotationAlignment: 'map', pitchAlignment: 'map' }).setLngLat([35, 31.8]).addTo(map);
-        new ResizeObserver(() => map.resize()).observe(this.container);
+        // המשתמש הזיז את המפה בעצמו — עוצרים את הנסיעה הווירטואלית
+        for (const ev of ['dragstart', 'rotatestart', 'pitchstart']) map.on(ev, e => { if (e.originalEvent) { this.stopFly(); this.onUserMove?.(); } });
+        const pad = () => { const h = this.container.clientHeight; map.setPadding({ top: Math.round(h * .26), bottom: Math.round(h * .24), left: 0, right: 0 }); };
+        pad();
+        map.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
+        new ResizeObserver(() => { map.resize(); pad(); }).observe(this.container);
         resolve();
       });
     });
@@ -131,35 +219,50 @@ export class Ride3D {
     map.getSource('alts').setData({ type: 'FeatureCollection', features: (this.alternatives || []).map(r => ({ type: 'Feature', properties: {}, geometry: r.geometry })) });
     const maxSpeed = Math.max(10, ...s.map(x => x.speed));
     map.getSource('arrows').setData({ type: 'FeatureCollection', features: s.map((x, i) => ({ type: 'Feature', properties: { i, rot: (x.direction + 180) % 360, s: .55 + .65 * x.speed / maxSpeed, color: this.colorOf(this.bandOf(x.crossGust)) }, geometry: { type: 'Point', coordinates: [x.lon, x.lat] } })) });
-    // נתיב לטיסה: קואורדינטות עם מרחק מצטבר
+    // נתיב לנסיעה: קואורדינטות עם מרחק מצטבר
     const path = o.route.geometry.coordinates;
     const cum = [0];
     for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + haversine(path[i - 1], path[i]));
     this.path = path; this.cum = cum;
     this.particles = [];
-    this.bike.setLngLat(path[0]).setRotation(bearing(path[0], path[Math.min(path.length - 1, 3)]));
   }
 
   setAlternatives(routes) { this.alternatives = routes; }
+  setBike(bike) { this.bike = bike; this.layer?.setBike(bike); }
+  setWind(wind) { this.layer?.rig?.set(wind); this.map?.triggerRepaint(); }
 
-  fit(animate = true) {
-    if (!this.map || !this.path) return;
-    const b = new maplibregl.LngLatBounds(this.path[0], this.path[0]);
-    this.path.forEach(c => b.extend(c));
-    const start = this.path[0], end = this.path.at(-1);
-    // מבט מאחורי נקודת היציאה לכיוון היעד, בזווית — כך רואים את התבליט
-    const heading = bearing(start, end);
-    const cam = this.map.cameraForBounds(b, { padding: { top: 90, bottom: 50, left: 40, right: 40 }, bearing: heading });
-    if (!cam) return;
-    this.map.easeTo({ center: cam.center, zoom: Math.min(13, cam.zoom + .2), bearing: heading, pitch: 58, duration: animate ? 1400 : 0 });
+  // הנקודה על הדרך שמתאימה לנקודת הדגימה, וכיוון הכביש בה
+  pointAt(sample) {
+    const total = this.cum.at(-1), sampleTotal = this.option.samples.at(-1).distance || total;
+    const d = sample.distance / sampleTotal * total;
+    const pos = this.along(d), back = this.along(Math.max(0, d - 40)), ahead = this.along(Math.min(total, d + 40));
+    return { pos, heading: haversine(back, ahead) > 3 ? bearing(back, ahead) : sample.heading, d };
   }
 
-  select(index, pan) {
-    const s = this.option?.samples?.[index]; if (!s || !this.map || !this.bike) return;
-    if (!this.flying) {
-      this.bike.setLngLat([s.lon, s.lat]).setRotation(s.heading);
-      if (pan) this.map.easeTo({ center: [s.lon, s.lat], zoom: Math.max(this.map.getZoom(), 11.5), duration: 700 });
+  // how: 'snap' קופץ למבט מאחורי הרוכב, 'ease' מחליק אליו, אחרת רק מזיז את האופנוע
+  select(index, how) {
+    const s = this.option?.samples?.[index]; if (!s || !this.map || this.flying) return;
+    const { pos, heading } = this.pointAt(s);
+    this.pos = pos; this.heading = heading;
+    if (how && !this.overview) {
+      const view = { center: pos, bearing: heading + CHASE.side, pitch: CHASE.pitch, zoom: CHASE.zoom };
+      if (how === 'snap') this.map.jumpTo(view); else this.map.easeTo({ ...view, duration: 900 });
     }
+    this.map.triggerRepaint();
+  }
+
+  // כפתור "כל הדרך": מבט על כל המסלול, ולחיצה נוספת חוזרת לרוכב
+  toggleOverview() {
+    if (!this.map || !this.path) return false;
+    this.stopFly();
+    this.overview = !this.overview;
+    if (!this.overview) { this.map.easeTo({ center: this.pos, bearing: this.heading + CHASE.side, pitch: CHASE.pitch, zoom: CHASE.zoom, duration: 1200 }); return false; }
+    const b = new maplibregl.LngLatBounds(this.path[0], this.path[0]);
+    this.path.forEach(c => b.extend(c));
+    const heading = bearing(this.path[0], this.path.at(-1));
+    const cam = this.map.cameraForBounds(b, { bearing: heading });
+    if (cam) this.map.easeTo({ center: cam.center, zoom: Math.min(13, cam.zoom - .1), bearing: heading, pitch: 52, duration: 1400 });
+    return true;
   }
 
   along(d) {
@@ -170,23 +273,25 @@ export class Ride3D {
     return [path[lo][0] + (path[hi][0] - path[lo][0]) * f, path[lo][1] + (path[hi][1] - path[lo][1]) * f];
   }
 
-  // טיסת מצלמה לאורך הדרך, כמו נסיעה במבט מעל הכתף
+  // נסיעה וירטואלית: האופנוע נוסע לאורך הדרך והמצלמה עוקבת מאחוריו
   fly({ startIndex = 0, onStep, onEnd }) {
     if (!this.map || !this.path) return;
     this.stopFly(false);
+    this.overview = false;
     const total = this.cum.at(-1), samples = this.option.samples;
     const sampleTotal = samples.at(-1).distance || total;
-    const duration = Math.min(80, Math.max(22, total / 1000 * .45)) * 1000;
+    const duration = Math.min(150, Math.max(30, total / 1000 * 1.1)) * 1000;
     const startD = samples[startIndex] ? samples[startIndex].distance / sampleTotal * total : 0;
     const t0 = performance.now() - startD / total * duration;
-    let heading = bearing(this.along(startD), this.along(startD + 400)), lastIndex = -1;
+    let heading = bearing(this.along(startD), this.along(startD + 60)), lastIndex = -1;
+    this.flying = true;
     const step = now => {
       if (!this.flying) return;
       const p = Math.min(1, (now - t0) / duration), d = p * total;
-      const pos = this.along(d), ahead = this.along(Math.min(total, d + 600));
-      if (haversine(pos, ahead) > 5) heading += turn(heading, bearing(pos, ahead)) * .06;
-      this.map.jumpTo({ center: pos, bearing: heading, pitch: 64, zoom: 13.4 });
-      this.bike.setLngLat(pos).setRotation(heading);
+      const pos = this.along(d), ahead = this.along(Math.min(total, d + 120));
+      if (haversine(pos, ahead) > 5) heading += turn(heading, bearing(pos, ahead)) * .12;
+      this.pos = pos; this.heading = heading;
+      this.map.jumpTo({ center: pos, bearing: heading + CHASE.side * .6, pitch: CHASE.pitch, zoom: FLY_ZOOM });
       const target = d / total * sampleTotal;
       let i = 0; while (i < samples.length - 1 && samples[i + 1].distance <= target + (samples[1]?.distance || 0) / 2) i++;
       if (i !== lastIndex) { lastIndex = i; onStep?.(i); }
@@ -198,7 +303,8 @@ export class Ride3D {
   }
   stopFly(notify = true) {
     if (!this.flying) return;
-    cancelAnimationFrame(this.flying); this.flying = null;
+    if (this.flying !== true) cancelAnimationFrame(this.flying);
+    this.flying = null;
     if (notify) this.onFlyEnd?.();
   }
 
@@ -206,6 +312,7 @@ export class Ride3D {
   resume() {
     if (this.running) return;
     this.running = true; this.lastFrame = performance.now();
+    this.map?.triggerRepaint();
     const frame = now => {
       if (!this.running) return;
       const dt = Math.min(.05, (now - this.lastFrame) / 1000); this.lastFrame = now;

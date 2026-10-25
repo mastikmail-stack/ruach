@@ -77,8 +77,8 @@ function materials(paint) {
     glass: new THREE.MeshPhysicalMaterial({ color: '#bcd9e6', metalness: 0, roughness: .05, transparent: true, opacity: .38, side: THREE.DoubleSide }),
     light: std('#fffbe6', 0, .3, { emissive: '#fff3c4', emissiveIntensity: 1.4 }),
     tail: std('#ff3b30', 0, .4, { emissive: '#ff2a1f', emissiveIntensity: 1.2 }),
-    suit: std('#23272d', .05, .75),
-    pants: std('#30353c', .05, .8),
+    suit: std('#4b5663', .05, .7),
+    pants: std('#353c45', .05, .8),
     boot: std('#121315', .1, .6),
     helmet: new THREE.MeshPhysicalMaterial({ color: paint, metalness: .2, roughness: .25, clearcoat: 1, clearcoatRoughness: .05 }),
     visor: std('#0d0f12', .7, .08)
@@ -266,19 +266,106 @@ function tree(scale, dark) {
   return g;
 }
 
-/* ===================== הבמה ===================== */
+/* ===================== חלקים משותפים: אופנוע ואפקטי רוח ===================== */
+export async function loadThree() {
+  THREE ??= await import('three');
+  return THREE;
+}
+export function buildBike({ type, color }) {
+  const build = (BUILDERS[type] || BUILDERS.naked)(materials(color));
+  build.group.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return build;
+}
+
+// אפקטי הרוח סביב האופנוע, במערכת הצירים של האופנוע (קדימה = ‎-z‎).
+// מקבל ערכי יעד ומחליק אליהם, כדי שמעבר בין נקודות ייראה כמו שינוי רוח אמיתי.
+export class WindRig {
+  constructor() {
+    this.group = new THREE.Group();
+    this.target = { rel: 90, speed: 0, gust: 0, signedCross: 0, color: '#2a9d7f' };
+    this.now = { rel: 90, speed: 0, gust: 0, signedCross: 0 };
+    this.time = 0;
+    this.arrowMat = new THREE.MeshStandardMaterial({ color: '#2a9d7f', emissive: '#2a9d7f', emissiveIntensity: .6, transparent: true, opacity: 1, roughness: .4 });
+    this.arrow = new THREE.Group();
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.09, .09, 1, 14), this.arrowMat);
+    shaft.rotation.x = Math.PI / 2; shaft.position.z = .5;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(.26, .5, 20), this.arrowMat);
+    head.rotation.x = Math.PI / 2; head.position.z = 1.2;
+    this.arrow.add(shaft, head); this.group.add(this.arrow);
+    this.streakMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .8, depthWrite: false });
+    this.streaks = new THREE.InstancedMesh(new THREE.BoxGeometry(.022, .022, 1), this.streakMat, 170);
+    this.streaks.frustumCulled = false; this.group.add(this.streaks);
+    this.particles = Array.from({ length: 170 }, () => ({ p: new THREE.Vector3(), life: 0, max: 1 }));
+    this.m4 = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.s = new THREE.Vector3();
+    this.up = new THREE.Vector3(0, 1, 0); this.white = new THREE.Color('#ffffff');
+  }
+  set(wind) { Object.assign(this.target, wind); }
+  // מחזיר את הערכים הנוכחיים (לנטיית האופנוע ולעצים)
+  update(dt, motion = 1) {
+    const T = this.target, N = this.now;
+    this.time += dt;
+    const k = 1 - Math.exp(-dt * 5);
+    N.rel += turn(N.rel, T.rel) * k;
+    for (const key of ['speed', 'gust', 'signedCross']) N[key] += (T[key] - N[key]) * k;
+    const rel = N.rel * Math.PI / 180;
+    const from = new THREE.Vector3(Math.sin(rel), 0, -Math.cos(rel)), to = from.clone().negate();
+    const color = new THREE.Color(T.color), calm = N.speed < 1;
+    const pulse = Math.pow(Math.max(0, Math.sin(this.time * 1.7)), 6) * clamp((N.gust - N.speed) / 25, 0, 1);
+
+    // חץ גדול מהצד שממנו מגיעה הרוח, אל עבר הרוכב
+    const len = clamp(.5 + N.speed / 22, .6, 2.2);
+    this.arrow.visible = !calm;
+    this.arrow.position.copy(from).multiplyScalar(1.3 + len).setY(1.0);
+    this.arrow.rotation.y = Math.atan2(to.x, to.z);
+    this.arrow.scale.set(1, 1, len);
+    this.arrowMat.color.lerp(color, k); this.arrowMat.emissive.lerp(color, k);
+
+    // זרמי אוויר: פסים דקים שזורמים דרך האופנוע בכיוון הרוח
+    this.streakMat.color.lerp(color.clone().lerp(this.white, .35), k);
+    const active = calm ? 12 : Math.min(170, 28 + Math.round(N.speed * 4));
+    const vel = (.6 + N.speed * .09) * (1 + pulse * .8) * (motion || .15);
+    this.q.setFromAxisAngle(this.up, Math.atan2(to.x, to.z));
+    const side = new THREE.Vector3(-to.z, 0, to.x);
+    const sLen = calm ? .25 : .35 + N.speed * .025;
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      if (i >= active) { this.m4.makeScale(0, 0, 0); this.streaks.setMatrixAt(i, this.m4); continue; }
+      p.life += dt;
+      if (p.life >= p.max || p.p.lengthSq() > 160) {
+        p.p.copy(from).multiplyScalar(rand(4, 9)).addScaledVector(side, rand(-5, 5)).setY(rand(.15, 2.6));
+        p.p.z -= 1.2;
+        p.life = 0; p.max = rand(2.5, 5);
+      }
+      p.p.addScaledVector(to, vel * dt * 3);
+      const fade = Math.min(1, p.life * 2, (p.max - p.life) * 2);
+      this.s.set(1, 1, sLen * Math.max(.05, fade));
+      this.m4.compose(p.p, this.q, this.s);
+      this.streaks.setMatrixAt(i, this.m4);
+    }
+    this.streaks.instanceMatrix.needsUpdate = true;
+    return { from, to, pulse, speed: N.speed, signedCross: N.signedCross };
+  }
+}
+
+// נטייה קלה אל תוך רוח הצד, רעידה במשבים וסיבוב גלגלים
+export function animateBike(build, holder, wind, dt, ride, time, motion = 1) {
+  if (!build) return;
+  build.wheels.forEach((w, i) => { w.rotation.x -= ride * dt / build.radii[i]; });
+  holder.rotation.z = (-clamp(wind.signedCross / 45, -1, 1) * .16 + Math.sin(time * 9) * wind.pulse * .03) * motion;
+  holder.position.y = Math.sin(time * 14) * .004 * motion;
+}
+
+/* ===================== במה עצמאית (כשאין מפה) ===================== */
 export class BikeStage {
   constructor(container) {
     this.container = container;
-    this.target = { rel: 90, speed: 0, gust: 0, signedCross: 0, color: '#2a9d7f' };
-    this.now = { rel: 90, speed: 0, gust: 0, signedCross: 0 };
     this.azimuth = .42; this.elevation = .44; this.riding = false; this.running = false;
     this.offset = 0; this.time = 0;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
   async init() {
-    THREE = await import('three');
+    await loadThree();
     const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
     const dark = matchMedia('(prefers-color-scheme: dark)').matches;
     const renderer = this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -291,8 +378,7 @@ export class BikeStage {
     const scene = this.scene = new THREE.Scene();
     scene.background = skyTexture(dark ? '#0f2430' : '#8ec5e4', dark ? '#35505a' : '#eef5ee');
     scene.fog = new THREE.Fog(dark ? '#35505a' : '#e8f1ea', 18, 70);
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), .04).texture;
+    scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), .04).texture;
     this.camera = new THREE.PerspectiveCamera(38, 1, .1, 200);
 
     scene.add(new THREE.HemisphereLight(dark ? '#9fc3d6' : '#dff1ff', dark ? '#1d2b26' : '#6d7f5a', dark ? .7 : 1));
@@ -303,7 +389,6 @@ export class BikeStage {
     sun.shadow.bias = -.0005;
     scene.add(sun);
 
-    // קרקע, כביש וסימון נתיבים
     const ground = new THREE.Mesh(new THREE.CircleGeometry(80, 48), new THREE.MeshStandardMaterial({ color: dark ? '#22382f' : '#b9cf9e', roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
     const road = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 160), new THREE.MeshStandardMaterial({ color: dark ? '#2b3236' : '#3b4247', roughness: .85 }));
@@ -312,11 +397,6 @@ export class BikeStage {
     for (const x of [-1.55, 1.55]) { const l = new THREE.Mesh(new THREE.PlaneGeometry(.08, 160), lineMat); l.rotation.x = -Math.PI / 2; l.position.set(x, .01, -50); scene.add(l); }
     this.dashes = new THREE.InstancedMesh(new THREE.PlaneGeometry(.1, 1.4), lineMat, 40);
     scene.add(this.dashes);
-    for (const [i, hill] of [[0, 1], [1, .8], [2, 1.2], [3, .9], [4, 1.1], [5, .7], [6, 1.3], [7, 1]].entries()) {
-      const a = Math.PI * .55 + i / 8 * Math.PI * .9 * (i % 2 ? 1 : -1) * .9;
-      const h = new THREE.Mesh(new THREE.ConeGeometry(9 * hill[1], 5 * hill[1], 7), new THREE.MeshStandardMaterial({ color: dark ? '#29433a' : '#9fb88a', roughness: 1, flatShading: true }));
-      h.position.set(Math.sin(a) * 55, 2.4 * hill[1] - .5, Math.cos(a) * 55 - 20); scene.add(h);
-    }
     this.trees = [];
     for (let i = 0; i < 16; i++) {
       const t = tree(rand(.8, 1.4), dark);
@@ -324,43 +404,15 @@ export class BikeStage {
       scene.add(t); this.trees.push(t);
     }
 
-    // שרוול רוח בצד הדרך
-    const sockPole = new THREE.Group();
-    const pole = mesh(new THREE.CylinderGeometry(.03, .03, 2.2, 8), new THREE.MeshStandardMaterial({ color: '#c9ced3', metalness: .6, roughness: .4 }));
-    pole.position.y = 1.1; sockPole.add(pole);
-    sockPole.position.set(2.5, 0, -3.2);
-    this.sock = new THREE.Group(); this.sock.position.y = 2.15; sockPole.add(this.sock);
-    this.sockTilt = new THREE.Group(); this.sock.add(this.sockTilt);
-    const radii = [.17, .145, .12, .095, .07];
-    for (let i = 0; i < 4; i++) {
-      const seg = new THREE.Mesh(new THREE.CylinderGeometry(radii[i + 1], radii[i], .22, 16, 1, true), new THREE.MeshStandardMaterial({ color: i % 2 ? '#ffffff' : '#ff5a1f', roughness: .7, side: THREE.DoubleSide }));
-      seg.rotation.x = Math.PI / 2; seg.position.z = .11 + i * .22; seg.castShadow = true;
-      this.sockTilt.add(seg);
-    }
-    scene.add(sockPole);
+    this.rig = new WindRig(); scene.add(this.rig.group);
+    this.lean = new THREE.Group(); scene.add(this.lean);
+    this.m4 = new THREE.Matrix4();
 
-    // חץ רוח גדול וזרמי אוויר
-    this.arrowMat = new THREE.MeshStandardMaterial({ color: '#2a9d7f', emissive: '#2a9d7f', emissiveIntensity: .35, transparent: true, opacity: .9, roughness: .4 });
-    this.arrow = new THREE.Group();
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, 1, 14), this.arrowMat);
-    shaft.rotation.x = Math.PI / 2; shaft.position.z = .5;
-    const head = new THREE.Mesh(new THREE.ConeGeometry(.15, .34, 20), this.arrowMat);
-    head.rotation.x = Math.PI / 2; head.position.z = 1.15;
-    this.arrow.add(shaft, head); scene.add(this.arrow);
-    this.streakMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .75, depthWrite: false });
-    this.streaks = new THREE.InstancedMesh(new THREE.BoxGeometry(.018, .018, 1), this.streakMat, 170);
-    this.streaks.frustumCulled = false; scene.add(this.streaks);
-    this.particles = Array.from({ length: 170 }, () => ({ p: new THREE.Vector3(), life: 0, max: 1 }));
-
-    this.bikeHolder = new THREE.Group(); scene.add(this.bikeHolder);
-    this.m4 = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.v = new THREE.Vector3(); this.s = new THREE.Vector3();
-
-    // גרירה אופקית מסובבת את המצלמה; גלילה אנכית ממשיכה לעבוד בטלפון
     const el = renderer.domElement;
     el.style.touchAction = 'pan-y';
     let drag = null;
     el.addEventListener('pointerdown', e => { drag = { x: e.clientX, a: this.azimuth }; });
-    addEventListener('pointermove', e => { if (drag) { this.azimuth = drag.a - (e.clientX - drag.x) * .009; this.hinted = true; } });
+    addEventListener('pointermove', e => { if (drag) this.azimuth = drag.a - (e.clientX - drag.x) * .009; });
     addEventListener('pointerup', () => { drag = null; });
     addEventListener('pointercancel', () => { drag = null; });
 
@@ -371,19 +423,13 @@ export class BikeStage {
     this.resume();
   }
 
-  setBike({ type, color }) {
+  setBike(bike) {
     if (!this.scene) return;
-    this.bikeHolder.clear();
-    const build = (BUILDERS[type] || BUILDERS.naked)(materials(color));
-    build.group.traverse(o => { if (o.isMesh) o.castShadow = true; });
-    this.bike = build;
-    this.lean = new THREE.Group(); this.lean.add(build.group);
-    this.bikeHolder.add(this.lean);
+    this.lean.clear();
+    this.bike = buildBike(bike);
+    this.lean.add(this.bike.group);
   }
-
-  setWind({ rel, speed, gust, signedCross, color }) {
-    Object.assign(this.target, { rel, speed, gust, signedCross, color });
-  }
+  setWind(wind) { this.rig?.set(wind); }
   setRiding(on) { this.riding = on; }
 
   resize() {
@@ -408,17 +454,9 @@ export class BikeStage {
   pause() { this.running = false; }
 
   frame(dt) {
-    const T = this.target, N = this.now, motion = this.reduced ? 0 : 1;
+    const motion = this.reduced ? 0 : 1;
     this.time += dt;
-    const k = 1 - Math.exp(-dt * 3);
-    N.rel += turn(N.rel, T.rel) * k;
-    for (const key of ['speed', 'gust', 'signedCross']) N[key] += (T[key] - N[key]) * k;
-    const rel = N.rel * Math.PI / 180;
-    const from = this.v.set(Math.sin(rel), 0, -Math.cos(rel)).clone(), to = from.clone().negate();
-    const color = new THREE.Color(T.color);
-    const calm = N.speed < 1;
-
-    // תנועת הכביש והעצים — תחושת נסיעה
+    const wind = this.rig.update(dt, motion);
     const ride = (this.riding ? 9 : 3.2) * motion;
     this.offset = (this.offset + ride * dt) % 3;
     for (let i = 0; i < 40; i++) {
@@ -426,66 +464,18 @@ export class BikeStage {
       this.dashes.setMatrixAt(i, this.m4);
     }
     this.dashes.instanceMatrix.needsUpdate = true;
-    const swayAxis = new THREE.Vector3(to.z, 0, -to.x).normalize();
-    const pulse = Math.pow(Math.max(0, Math.sin(this.time * 1.7)), 6) * clamp((N.gust - N.speed) / 25, 0, 1);
+    const swayAxis = new THREE.Vector3(wind.to.z, 0, -wind.to.x).normalize();
     for (const t of this.trees) {
       t.position.z += ride * dt;
       if (t.position.z > 12) { t.position.z -= 80; t.position.x = Math.sign(t.position.x) * rand(3.2, 8); }
-      const tilt = Math.min(.22, N.speed * .006) + Math.sin(this.time * 3 + t.position.x) * .015 * (N.speed / 20) + pulse * .05;
+      const tilt = Math.min(.22, wind.speed * .006) + Math.sin(this.time * 3 + t.position.x) * .015 * (wind.speed / 20) + wind.pulse * .05;
       t.quaternion.setFromAxisAngle(swayAxis, tilt * motion);
     }
+    animateBike(this.bike, this.lean, wind, dt, ride, this.time, motion);
 
-    // האופנוע: גלגלים מסתובבים, נטייה קלה אל תוך רוח הצד ורעידה במשבים
-    if (this.bike) {
-      this.bike.wheels.forEach((w, i) => { w.rotation.x -= ride * dt / this.bike.radii[i]; });
-      const lean = -clamp(N.signedCross / 45, -1, 1) * .16 + Math.sin(this.time * 9) * pulse * .03;
-      this.lean.rotation.z = lean * motion;
-      this.lean.position.y = Math.sin(this.time * 14) * .004 * motion;
-    }
-
-    // שרוול רוח: מצביע לאן האוויר זורם, ומתרומם ככל שהרוח חזקה
-    this.sock.rotation.y = Math.atan2(to.x, to.z);
-    this.sockTilt.rotation.x = 1.25 * (1 - Math.min(1, N.speed / 28)) + Math.sin(this.time * 6) * .05 * motion;
-    this.sockTilt.rotation.z = Math.sin(this.time * 8) * .06 * Math.min(1, N.speed / 15) * motion;
-
-    // חץ גדול מהצד שממנו מגיעה הרוח, אל עבר הרוכב
-    const len = clamp(.5 + N.speed / 22, .6, 2.2);
-    this.arrow.visible = !calm;
-    this.arrow.position.copy(from.clone().multiplyScalar(1.6 + len)).setY(1.0);
-    this.arrow.rotation.y = Math.atan2(to.x, to.z);
-    this.arrow.scale.set(1, 1, len);
-    this.arrowMat.color.lerp(color, k); this.arrowMat.emissive.lerp(color, k);
-
-    // זרמי אוויר: פסים דקים שזורמים דרך הסצנה בכיוון הרוח
-    this.streakMat.color.lerp(color.clone().lerp(new THREE.Color('#ffffff'), .35), k);
-    const active = calm ? 12 : Math.min(170, 28 + Math.round(N.speed * 4));
-    const vel = (.6 + N.speed * .09) * (1 + pulse * .8) * (motion || .15);
-    const yaw = Math.atan2(to.x, to.z);
-    this.q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-    const side = new THREE.Vector3(-to.z, 0, to.x);
-    const sLen = calm ? .25 : .35 + N.speed * .025;
-    for (let i = 0; i < this.particles.length; i++) {
-      const p = this.particles[i];
-      if (i >= active) { this.m4.makeScale(0, 0, 0); this.streaks.setMatrixAt(i, this.m4); continue; }
-      p.life += dt;
-      if (p.life >= p.max || p.p.lengthSq() > 160) {
-        p.p.copy(from).multiplyScalar(rand(4, 9)).addScaledVector(side, rand(-5, 5)).setY(rand(.15, 2.6));
-        p.p.z -= 1.2;
-        p.life = 0; p.max = rand(2.5, 5);
-      }
-      p.p.addScaledVector(to, vel * dt * 3);
-      const fade = Math.min(1, p.life * 2, (p.max - p.life) * 2);
-      this.s.set(1, 1, sLen * Math.max(.05, fade));
-      this.m4.compose(p.p, this.q, this.s);
-      this.streaks.setMatrixAt(i, this.m4);
-    }
-    this.streaks.instanceMatrix.needsUpdate = true;
-
-    // מצלמה סביב הרוכב
     const r = this.radius, e = this.elevation;
     this.camera.position.set(Math.sin(this.azimuth) * Math.cos(e) * r, Math.sin(e) * r + .5, Math.cos(this.azimuth) * Math.cos(e) * r - .2);
     this.camera.lookAt(0, .55, -.6);
-    // עץ שעומד בין המצלמה לאופנוע מוסתר, כדי שלא יסתיר את הרוכב
     const cx = this.camera.position.x, cz = this.camera.position.z + .6, len2 = cx * cx + cz * cz;
     for (const t of this.trees) {
       const tx = t.position.x, tz = t.position.z + .6, f = (tx * cx + tz * cz) / len2;
