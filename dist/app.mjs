@@ -1,11 +1,11 @@
-import { ZONE, localParts, addDays, departureEpoch, validateDeparture, parseRoads, chooseRoute, sampleRoute, roadRefs, weatherAt, band, directionName } from './core.mjs?v=17';
-import { windRelation } from './view.mjs?v=17';
-import { navigationLinks, forecastPlan } from './navigation.mjs?v=17';
-import { Ride3D, supports3D } from './ride3d.mjs?v=17';
-import { BikeStage, BIKE_TYPES, BIKE_COLORS } from './bike3d.mjs?v=17';
-import { conditionsAt, conditionName, summarizeConditions, compareWind } from './conditions.mjs?v=17';
-import { routeChoices } from './routes.mjs?v=17';
-import { rainLabel } from './weather-copy.mjs?v=17';
+import { ZONE, localParts, addDays, departureEpoch, validateDeparture, parseRoads, chooseRoute, sampleRoute, roadRefs, weatherAt, band, directionName } from './core.mjs?v=18';
+import { windRelation } from './view.mjs?v=18';
+import { navigationLinks, forecastPlan } from './navigation.mjs?v=18';
+import { Ride3D, supports3D } from './ride3d.mjs?v=18';
+import { BikeStage, BIKE_TYPES, BIKE_COLORS } from './bike3d.mjs?v=18';
+import { conditionsAt, conditionName, summarizeConditions, compareWind } from './conditions.mjs?v=18';
+import { routeChoices } from './routes.mjs?v=18';
+import { rainLabel } from './weather-copy.mjs?v=18';
 
 /* ---------- עזרים ---------- */
 const $ = q => document.querySelector(q);

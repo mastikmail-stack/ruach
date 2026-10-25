@@ -1,6 +1,7 @@
 // מסך הרכיבה: מפת תלת־ממד עם תבליט שטח, זרמי רוח לאורך הדרך, ואופנוע תלת־ממד שנוסע על הכביש עצמו.
 // MapLibre נטען רק כשפותחים את התצוגה; האופנוע מצויר בשכבה מותאמת (custom layer) של Three.js.
-import { loadThree, buildBike, WindRig, animateBike } from './bike3d.mjs?v=17';
+import { loadThree, buildBike, WindRig, animateBike } from './bike3d.mjs?v=18';
+import { DampedValue } from './motion.mjs?v=18';
 
 const VERSION = '4.7.1';
 const SCRIPT = `https://cdn.jsdelivr.net/npm/maplibre-gl@${VERSION}/dist/maplibre-gl.js`;
@@ -173,10 +174,12 @@ export class Ride3D {
     this.map = null; this.ready = null; this.option = null;
     this.particles = []; this.running = false; this.flying = null; this.lastFrame = 0; this.lastPush = 0;
     this.pos = null; this.heading = 0; this.overview = false;
+    this.distance = 0; this.transition = null; this.targetIndex = null;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
   async open(option, places) {
+    this.transition = null; this.targetIndex = null;
     this.option = option; this.places = places;
     await Promise.all([loadLibrary(), loadThree()]);
     if (!this.map) this.ready = this.create();
@@ -228,7 +231,13 @@ export class Ride3D {
         map.on('mouseenter', 'arrows', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'arrows', () => { map.getCanvas().style.cursor = ''; });
         // המשתמש הזיז את המפה בעצמו — עוצרים את הנסיעה הווירטואלית
-        for (const ev of ['dragstart', 'rotatestart', 'pitchstart']) map.on(ev, e => { if (e.originalEvent) { this.stopFly(); this.onUserMove?.(); } });
+        for (const ev of ['dragstart', 'rotatestart', 'pitchstart']) map.on(ev, e => {
+          if (e.originalEvent) {
+            this.stopFly();
+            if (this.transition) this.transition.follow = false;
+            this.onUserMove?.();
+          }
+        });
         map.dragPan.disable();
         map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
         map.on('sourcedata', e => { if (e.sourceId === 'dem' && this.pos) this.recenter(); });
@@ -264,7 +273,13 @@ export class Ride3D {
   setAlternatives(routes) { this.alternatives = routes; }
   setBike(bike) { this.bike = bike; this.layer?.setBike(bike); }
   setWind(wind) { this.layer?.rig?.set(wind); this.map?.triggerRepaint(); }
-  recenter() { if (this.map && this.pos) this.map.jumpTo({ center: this.pos }); }
+  recenter() {
+    if (!this.map || !this.pos) return;
+    // The center lock already follows pos during a camera animation. jumpTo
+    // here would cancel zoom/overview transitions whenever terrain tiles arrive.
+    if (this.map.isEasing()) this.map.triggerRepaint();
+    else this.map.jumpTo({ center: this.pos });
+  }
 
   // הנקודה על הדרך שמתאימה לנקודת הדגימה, וכיוון הכביש בה
   pointAt(sample) {
@@ -274,16 +289,47 @@ export class Ride3D {
     return { pos, heading: haversine(back, ahead) > 3 ? bearing(back, ahead) : sample.heading, d };
   }
 
-  // how: 'snap' קופץ למבט מאחורי הרוכב, 'ease' מחליק אליו, אחרת רק מזיז את האופנוע
+  // Move the model and camera together. Moving only the camera cannot work with
+  // the camera-center lock: assigning the destination to pos would teleport both.
   select(index, how) {
     const s = this.option?.samples?.[index]; if (!s || !this.map || this.flying) return;
-    const { pos, heading } = this.pointAt(s);
-    this.pos = pos; this.heading = heading;
-    if (how && !this.overview) {
-      const view = { center: pos, bearing: heading + CHASE.side, pitch: CHASE.pitch, zoom: CHASE.zoom };
-      if (how === 'snap') this.map.jumpTo(view); else this.map.easeTo({ ...view, duration: 900 });
-    } else this.recenter();
+    // A chart resize can refresh the same selection while it is still moving.
+    if (index === this.targetIndex && how !== 'snap') return;
+    const { pos, heading, d } = this.pointAt(s);
+    this.targetIndex = index;
+    if (how === 'ease' && this.pos && this.running && !this.reduced) {
+      this.map.stop();
+      const motion = this.transition ??= {
+        distance: new DampedValue(this.distance, .02),
+        heading: new DampedValue(this.heading),
+        bearing: new DampedValue(this.map.getBearing()),
+        follow: !this.overview
+      };
+      motion.distance.to(d);
+      motion.heading.angleTo(heading);
+      motion.bearing.angleTo(heading + CHASE.side);
+    } else {
+      this.transition = null;
+      this.distance = d; this.pos = pos; this.heading = heading;
+      const view = { center: pos };
+      if (how && !this.overview) view.bearing = heading + CHASE.side;
+      if (how === 'snap' && !this.overview) Object.assign(view, { pitch: CHASE.pitch, zoom: CHASE.zoom });
+      this.map.jumpTo(view);
+    }
     this.map.triggerRepaint();
+  }
+
+  advanceSelection(dt) {
+    const motion = this.transition; if (!motion) return;
+    // Interpolate distance on the actual road, including curves, never a direct
+    // line between weather samples. Retargeting reuses the moving springs.
+    this.distance = Math.max(0, Math.min(this.cum.at(-1), motion.distance.step(dt)));
+    this.pos = this.along(this.distance);
+    this.heading = motion.heading.step(dt);
+    const bearing = motion.bearing.step(dt);
+    if (this.map.isEasing()) this.map.triggerRepaint();
+    else this.map.jumpTo({ center: this.pos, ...(!this.overview && motion.follow ? { bearing } : {}) });
+    if (motion.distance.settled && motion.heading.settled && motion.bearing.settled) this.transition = null;
   }
 
   // כפתור "כל הדרך": מבט על כל המסלול, ולחיצה נוספת חוזרת לרוכב
@@ -315,6 +361,7 @@ export class Ride3D {
   fly({ startIndex = 0, onStep, onEnd }) {
     if (!this.map || !this.path) return;
     this.stopFly(false);
+    this.transition = null; this.targetIndex = null;
     this.overview = false;
     const total = this.cum.at(-1), samples = this.option.samples;
     const sampleTotal = samples.at(-1).distance || total;
@@ -328,7 +375,7 @@ export class Ride3D {
       const p = Math.min(1, (now - t0) / duration), d = p * total;
       const pos = this.along(d), ahead = this.along(Math.min(total, d + 120));
       if (haversine(pos, ahead) > 5) heading += turn(heading, bearing(pos, ahead)) * .12;
-      this.pos = pos; this.heading = heading;
+      this.distance = d; this.pos = pos; this.heading = heading;
       this.map.jumpTo({ center: pos, bearing: heading + CHASE.side * .6, pitch: CHASE.pitch, zoom: FLY_ZOOM });
       const target = d / total * sampleTotal;
       let i = 0; while (i < samples.length - 1 && samples[i + 1].distance <= target + (samples[1]?.distance || 0) / 2) i++;
@@ -354,13 +401,14 @@ export class Ride3D {
     const frame = now => {
       if (!this.running) return;
       const dt = Math.min(.05, (now - this.lastFrame) / 1000); this.lastFrame = now;
+      this.advanceSelection(dt);
       this.animate(dt);
       if (now - this.lastPush > 33) { this.lastPush = now; this.push(); }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
   }
-  pause() { this.running = false; this.stopFly(false); }
+  pause() { this.running = false; this.transition = null; this.stopFly(false); }
 
   animate(dt) {
     const samples = this.option?.samples; if (!samples || !this.map) return;

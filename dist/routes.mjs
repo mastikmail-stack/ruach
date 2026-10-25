@@ -1,4 +1,4 @@
-import { haversine, roadRefs } from './core.mjs?v=17';
+import { haversine, roadRefs } from './core.mjs?v=18';
 
 export function routeURL(points, probe = null) {
   const stops = [...points];
